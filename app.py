@@ -64,7 +64,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v102")
+                geolocator = Nominatim(user_agent="broadcasting_master_v103")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
@@ -93,6 +93,7 @@ with st.sidebar:
         if sd.last_loaded_nm != sd.target_nm:
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
             sd["v_reg"], sd["v_cat"], sd["v_nm"] = row['지역'], row['구분'], row['이름']
+            # 수정 모드 진입 시 마커 클릭 좌표가 없으면 시설 좌표 사용
             if not sd.t_la: sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
             for s in SL: sd[f"ch_{s}"] = str(row[s])
             sd.last_loaded_nm = sd.target_nm
@@ -154,8 +155,6 @@ for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
         
-        # [핵심 수정] 마커와 이름표가 겹치지 않게 우측 상단으로 오프셋 이동
-        # translate(10px, -45px)로 우측으로 10픽셀, 위쪽으로 45픽셀 이동시켜 가림 현상 방지
         label_html = f'''
             <div style="
                 display: inline-block;
@@ -173,6 +172,7 @@ for _, r in disp_df.iterrows():
                 {r["이름"]}
             </div>
         '''
+        # 마커 추가
         folium.Marker(p, icon=folium.DivIcon(html=label_html, icon_anchor=(0,0))).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
@@ -180,15 +180,35 @@ for _, r in disp_df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v102_{sd.map_key}")
+# 지도 출력
+map_data = st_folium(m, width="100%", height=700, key=f"map_v103_{sd.map_key}")
 
-if map_data.get("last_clicked"):
+# [v103 핵심 로직] 마커 클릭 시 정보 로딩
+if map_data.get("last_object_clicked"):
+    cla = map_data["last_object_clicked"]["lat"]
+    clo = map_data["last_object_clicked"]["lng"]
+    # 지도에서 클릭한 마커와 일치하는 시설 찾기 (소수점 5자리까지 비교)
+    match = disp_df[
+        (disp_df['위도'].astype(float).round(5) == round(cla, 5)) & 
+        (disp_df['경도'].astype(float).round(5) == round(clo, 5))
+    ]
+    if not match.empty:
+        sel_row = match.iloc[0]
+        if sd.target_nm != sel_row['이름']:
+            sd.m_mode = "정보 수정"
+            sd.target_nm = sel_row['이름']
+            sd.center = [cla, clo]
+            sd.t_la, sd.t_lo = None, None # 마커 클릭 시 검색 마커는 제거
+            sd.map_key += 1; st.rerun()
+
+# 배경 클릭 시 신규 등록 좌표 획득
+elif map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo; st.rerun()
 
 st.divider()
-st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
+st.markdown(f"### 📊 데이터 관리 현황", unsafe_allow_html=True)
 
 cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
 def style_row(row):
@@ -206,4 +226,4 @@ if event and event.get("selection", {}).get("rows"):
         sd.center, sd.m_mode, sd.target_nm = [float(sel_row['위도']), float(sel_row['경도'])], "정보 수정", sel_row['이름']
         sd.map_key += 1; st.rerun()
 
-st.download_button(label="📥 전체 데이터 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
+st.download_button(label="📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
