@@ -30,13 +30,13 @@ for k, v in {'map_center':[35.1796, 129.0756], 'temp_lat':None, 'temp_lon':None}
     if k not in st.session_state: st.session_state[k] = v
 
 def get_c(addr):
-    g = Nominatim(user_agent="v31_mgr")
+    g = Nominatim(user_agent="v32_mgr")
     try:
         l = g.geocode(addr)
         return (l.latitude, l.longitude) if l else None
     except: return None
 
-st.markdown("## 📡 송신소/중계소 통합 관리")
+st.markdown("## 📡 송신소/중계소 관리 (레이어 복구)")
 
 # [3] 사이드바 도구
 with st.sidebar:
@@ -45,7 +45,7 @@ with st.sidebar:
     my_p = None
     if gps and 'coords' in gps:
         my_p = [gps['coords']['latitude'], gps['coords']['longitude']]
-        st.success("📍 GPS 연결")
+        st.success("📍 GPS 연결됨")
         if st.button("🎯 내 위치로"):
             st.session_state.map_center = my_p
             st.rerun()
@@ -82,7 +82,6 @@ with st.sidebar:
             st.session_state.temp_lat = None
             st.rerun()
 
-    # --- [삭제 기능] ---
     if not st.session_state.df.empty:
         st.divider()
         st.markdown("### 🗑️ 삭제")
@@ -90,40 +89,25 @@ with st.sidebar:
         if st.button("🚨 시설 삭제"):
             st.session_state.df = st.session_state.df[st.session_state.df['이름'] != tg]
             st.session_state.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            st.warning(f"'{tg}' 삭제됨")
             st.rerun()
 
-# [4] 지도
+# [4] 지도 레이어 설정
 m = folium.Map(location=st.session_state.map_center, zoom_start=14)
-folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=s,h&hl=ko&x={x}&y={y}&z={z}', 
-                 attr='G', name='위성', overlay=False).add_to(m)
+
+# 레이어 1: 산/도로명 위성
+folium.TileLayer(
+    tiles='https://mt1.google.com/vt/lyrs=s,h&hl=ko&x={x}&y={y}&z={z}',
+    attr='G', name='위성 (산/도로명)', overlay=False, control=True
+).add_to(m)
+
+# 레이어 2: 순수 위성
+folium.TileLayer(
+    tiles='https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}',
+    attr='G', name='순수 위성', overlay=False, control=True
+).add_to(m)
+
+# 레이어 컨트롤 추가
+folium.LayerControl(position='topright').add_to(m)
 
 if my_p:
-    folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person', prefix='fa')).add_to(m)
-
-for _, r in st.session_state.df.iterrows():
-    try:
-        p = [float(r['위도']), float(r['경도'])]
-        clr = 'red' if r['구분'] == '송신소' else 'blue'
-        d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
-        dtv = " | ".join([f"{s}:{r[s]}" for s in ST_L if "(U)" not in s and str(r[s]).strip() != ""])
-        uhd = " | ".join([f"{s}:{r[s]}" for s in ST_L if "(U)" in s and str(r[s]).strip() != ""])
-        pop = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dtv}<br>UHD: {uhd}{d}"
-        folium.Marker(p, popup=folium.Popup(pop, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
-    except: continue
-
-if st.session_state.temp_lat:
-    folium.Marker([st.session_state.temp_lat, st.session_state.temp_lon], icon=folium.Icon(color='green')).add_to(m)
-
-# 줄 잘림 방지를 위해 변수로 분리
-map_key = "map_v31"
-res = st_folium(m, width="100%", height=500, key=map_key)
-
-if res and res.get('last_clicked'):
-    la = round(res['last_clicked']['lat'], 6)
-    lo = round(res['last_clicked']['lng'], 6)
-    if st.session_state.temp_lat != la:
-        st.session_state.temp_lat, st.session_state.temp_lon = la, lo
-        st.rerun()
-
-st.dataframe(st.session_state.df, use_container_width=True)
+    folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person',
