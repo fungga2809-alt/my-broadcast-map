@@ -51,11 +51,11 @@ st.markdown("""
     <style>
     /* 앱 전체 폰트 크기 업그레이드 */
     html, body, [class*="css"] {
-        font-size: 18px !important;
+        font-size: 20px !important;
     }
     /* 표 헤더 글자 크기 및 중앙 정렬 */
     th {
-        font-size: 20px !important;
+        font-size: 22px !important;
         text-align: center !important;
     }
     /* 사이드바 입력창 폰트 조절 */
