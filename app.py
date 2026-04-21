@@ -46,19 +46,21 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
-# [CSS 주입] 표의 폰트 크기 확대 및 중앙 정렬
+# [강력한 CSS 주입] 앱 전체의 기본 폰트와 표의 가시성 대폭 향상
 st.markdown("""
     <style>
-    /* 데이터프레임 셀 텍스트 중앙 정렬 및 폰트 크기 조정 */
-    [data-testid="stTable"] td, [data-testid="stDataFrame"] td {
-        text-align: center !important;
-        font-size: 16px !important;
+    /* 앱 전체 폰트 크기 업그레이드 */
+    html, body, [class*="css"] {
+        font-size: 18px !important;
     }
-    /* 헤더 텍스트 중앙 정렬 */
-    [data-testid="stTable"] th, [data-testid="stDataFrame"] th {
+    /* 표 헤더 글자 크기 및 중앙 정렬 */
+    th {
+        font-size: 20px !important;
         text-align: center !important;
-        font-size: 17px !important;
-        font-weight: bold !important;
+    }
+    /* 사이드바 입력창 폰트 조절 */
+    .stTextInput input {
+        font-size: 18px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -168,18 +170,22 @@ for _, r in disp_df.iterrows():
         ).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=600, key=f"map_v81_{sd.map_key}")
+st_folium(m, width="100%", height=600, key=f"map_v82_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (스타일링 보강)
+# [4] 하단: 데이터 관리 현황 (중앙 정렬 및 폰트 대형화)
 # ---------------------------------------------------------
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
-# 행별 색상 및 중앙 정렬 스타일링 함수
+# [중요] 모든 컬럼을 중앙 정렬하는 설정 생성
+# TextColumn을 사용하여 alignment="center"를 강제 적용합니다.
+cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
+
+# 행별 색상 스타일링
 def style_row(row):
     color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
-    return [f'{color} text-align: center;' for _ in row]
+    return [color for _ in row]
 
 styled_df = disp_df[CL].style.apply(style_row, axis=1)
 
@@ -189,6 +195,7 @@ event = st.dataframe(
     on_select="rerun", 
     selection_mode="single-row", 
     hide_index=True, 
+    column_config=cfg,  # 중앙 정렬 설정 적용
     key="main_table"
 )
 
