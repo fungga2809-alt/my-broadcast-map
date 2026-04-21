@@ -51,22 +51,20 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v70 디자인 및 데이터 로딩 로직
+# [2] 사이드바: 관제 및 관리
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
-    # 지역 필터
     regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
     sd.sel_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
 
-    # 주소 검색
     st.subheader("🔍 주소/지명 검색")
     search_addr = st.text_input("검색할 주소 또는 건물명", key="addr_input")
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v100")
+                geolocator = Nominatim(user_agent="broadcasting_master_v101")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
@@ -84,13 +82,10 @@ with st.sidebar:
 
     st.divider()
 
-    # 모드 설정
     sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
-    
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
     
-    # 데이터 로딩 로직
     if sd.m_mode == "정보 수정" and names:
         target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
         sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx)
@@ -107,7 +102,6 @@ with st.sidebar:
             for s in SL: sd[f"ch_{s}"] = "" 
             sd.last_loaded_nm = "NEW"
 
-    # 기본 정보 입력
     new_reg = st.text_input("지역", key="v_reg")
     new_cat = st.radio("구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1, key="v_cat_radio")
     sd["v_cat"] = new_cat
@@ -117,7 +111,6 @@ with st.sidebar:
     final_lo = st.number_input("경도", value=float(sd.t_lo if sd.t_lo else sd.center[1]), format="%.6f", key="inp_lo")
     sd.t_la, sd.t_lo = final_la, final_lo
 
-    # 채널 정보 그룹화 입력
     st.subheader("📺 채널 정보 (그룹화)")
     st.info("📡 **DTV 채널**")
     dtv_cols = st.columns(3)
@@ -155,38 +148,39 @@ st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-# [수정] 지도 높이 확대 (height=700)
 m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
         
-        # [수정] 지도 라벨 디자인: 글씨 작게(9pt), 흰색 바탕
+        # [핵심 수정] 이름표 바탕 확대 및 위치 조정 (transform으로 마커 위로 올림)
         label_html = f'''
             <div style="
-                font-size: 9pt; 
-                color: {color}; 
-                font-weight: bold; 
-                background-color: white; 
-                padding: 2px 4px; 
-                border: 1px solid {color}; 
-                border-radius: 3px; 
+                display: inline-block;
+                padding: 4px 10px;
+                background-color: white;
+                border: 2px solid {color};
+                border-radius: 6px;
+                color: {color};
+                font-size: 10pt;
+                font-weight: bold;
                 white-space: nowrap;
-                box-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+                box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+                transform: translate(-50%, -42px);
             ">
                 {r["이름"]}
             </div>
         '''
-        folium.Marker(p, icon=folium.DivIcon(html=label_html)).add_to(m)
+        # icon_anchor를 (0,0)으로 잡고 위 CSS transform으로 정확히 마커 머리 위 중앙에 배치
+        folium.Marker(p, icon=folium.DivIcon(html=label_html, icon_anchor=(0,0))).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-# [수정] st_folium 높이 반영
-map_data = st_folium(m, width="100%", height=700, key=f"map_v100_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v101_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
