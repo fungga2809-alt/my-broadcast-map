@@ -28,7 +28,7 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# 세션 상태 초기화 (v70 순정 기반)
+# 세션 상태 초기화 (v70 순정 로직)
 defaults = {
     'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
@@ -40,20 +40,20 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 최신 스타일 (대형 폰트 및 팝업 스타일)
+# [CSS] 최신 스타일 (대형 폰트 및 UI 정돈)
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; }
-    .leaflet-popup-content { font-size: 15px !important; width: 280px !important; line-height: 1.6; }
-    /* 표 셀 데이터 중앙 정렬 강제 */
-    [data-testid="stDataFrame"] div[class*="row"] div { text-align: center !important; }
+    .leaflet-popup-content { font-size: 14px !important; width: 250px !important; line-height: 1.6; }
+    /* 표 셀 중앙 정렬 */
+    [data-testid="stDataFrame"] td { text-align: center !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v70 레이아웃 (그룹화 입력)
+# [2] 사이드바: v70 레이아웃 (그룹화 입력 시스템)
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -67,12 +67,12 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_v118")
+                geolocator = Nominatim(user_agent="broadcasting_v119")
                 loc = geolocator.geocode(search_addr)
                 if loc:
                     sd.center = [loc.latitude, loc.longitude]
                     sd.t_la, sd.t_lo = loc.latitude, loc.longitude
-                    sd.m_mode, sd.target_nm = "새로 등록", None
+                    sd.m_mode, sd.target_nm = "새로 등록", None 
                     sd.map_key += 1; st.rerun()
             except: st.error("검색 오류")
 
@@ -86,11 +86,12 @@ with st.sidebar:
 
     st.divider()
 
-    # 모드 설정 및 데이터 로딩
+    # 모드 설정
     sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
     
+    # 데이터 로딩 로직 (v70 스타일)
     if sd.m_mode == "정보 수정" and names:
         target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
         sd.target_nm = st.selectbox("수정 대상 선택", names, index=target_idx)
@@ -145,7 +146,7 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도 제어 (v70 팝업 + 명칭 강조)
+# [3] 본문: 지도 제어 (v70 시스템 복구)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -156,64 +157,52 @@ for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
         
-        # 팝업 내용
+        # 팝업 (v70 방식)
         dt_t = " | ".join([f"{s}:{r[s]}" for s in SL_DTV])
         uh_t = " | ".join([f"{s}:{r[s]}" for s in SL_UHD])
-        p_html = f"<div style='width:260px;'><b>[{r['구분']}] {r['이름']}</b><br><hr>DTV: {dt_t}<br>UHD: {uh_t}</div>"
+        p_html = f"<div style='width:250px;'><b>[{r['구분']}] {r['이름']}</b><br><hr>DTV: {dt_t}<br>UHD: {uh_t}</div>"
         
-        # 이름표 디자인 (명칭 강조)
+        # 이름표 디자인 (클릭 투과 설정)
         l_html = f'''<div style="display: inline-block; padding: 4px 10px; background-color: white; border: 2px solid {color}; border-radius: 6px; color: {color}; font-size: 10pt; font-weight: bold; white-space: nowrap; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); transform: translate(15px, -35px); pointer-events: none;">[{r["구분"]}] {r["이름"]}</div>'''
         folium.Marker(p, icon=folium.DivIcon(html=l_html, icon_anchor=(0,0))).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=300)).add_to(m)
     except: pass
 
+# 신규 등록용 녹색 마커 (고정 표시)
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v118_{sd.map_key}")
+# 지도 출력 및 클릭 감지 (v70 순정 로직: 클릭 시 좌표 획득)
+map_data = st_folium(m, width="100%", height=700, key=f"map_v119_{sd.map_key}")
 
-# 신규 등록/수정 클릭 로직 (v70 방식)
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-    match = disp_df[(disp_df['위도'].astype(float).sub(cla).abs() < 0.0015) & (disp_df['경도'].astype(float).sub(clo).abs() < 0.0015)]
-    if not match.empty:
-        sel_row = match.iloc[0]
-        if sd.target_nm != sel_row['이름']:
-            sd.m_mode, sd.target_nm, sd.last_loaded_nm = "정보 수정", sel_row['이름'], None
-            sd.center, sd.t_la, sd.t_lo = [float(sel_row['위도']), float(sel_row['경도'])], None, None
-            sd.map_key += 1; st.rerun()
-    else:
-        if sd.t_la != cla:
-            sd.t_la, sd.t_lo, sd.m_mode, sd.target_nm = cla, clo, "새로 등록", None
-            sd.map_key += 1; st.rerun()
+    if sd.t_la != cla:
+        sd.t_la, sd.t_lo = cla, clo
+        sd.m_mode, sd.target_nm = "새로 등록", None
+        sd.map_key += 1; st.rerun()
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (색상 및 중앙 정렬 강화)
+# [4] 하단: 데이터 관리 현황 (v118 디자인 유지)
 # ---------------------------------------------------------
 st.divider()
 st.subheader("📊 데이터 관리 현황")
 
-# 컬럼 설정 (헤더 이름 변경 및 중앙 정렬)
+# 컬럼 설정 (중앙 정렬)
 column_cfg = {
-    "지역": st.column_config.TextColumn("지역", alignment="center"),
-    "구분": st.column_config.TextColumn("구분", alignment="center"),
     "이름": st.column_config.TextColumn("📡 송신소/중계소 이름", alignment="center", width="medium"),
-    "위도": st.column_config.TextColumn("위도", alignment="center"),
-    "경도": st.column_config.TextColumn("경도", alignment="center"),
 }
-# 나머지 채널 컬럼들도 중앙 정렬 추가
-for s in SL: column_cfg[s] = st.column_config.TextColumn(s, alignment="center")
+for c in CL: 
+    if c != "이름": column_cfg[c] = st.column_config.TextColumn(c, alignment="center")
 
-# 행 색상 및 중앙 정렬 스타일링 함수
-def style_status_table(row):
+# 행 색상 및 중앙 정렬 (v118 스타일)
+def style_table(row):
     if row['구분'] == '송신소':
-        # 송신소: 연한 빨강 배경에 빨간 글씨
         return ['background-color: #ffebee; color: #d32f2f; font-weight: bold; text-align: center;'] * len(row)
     else:
-        # 중계소: 연한 파랑 배경에 파란 글씨
         return ['background-color: #e3f2fd; color: #1976d2; text-align: center;'] * len(row)
 
-styled_df = disp_df[CL].style.apply(style_status_table, axis=1)
+styled_df = disp_df[CL].style.apply(style_table, axis=1)
 
 event = st.dataframe(
     styled_df, 
@@ -225,12 +214,12 @@ event = st.dataframe(
     key="main_table"
 )
 
-# 표 클릭 시 지도 이동 연동
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
     if sd.target_nm != sel_row['이름']:
         sd.center, sd.m_mode, sd.target_nm, sd.last_loaded_nm = [float(sel_row['위도']), float(sel_row['경도'])], "정보 수정", sel_row['이름'], None
+        sd.t_la, sd.t_lo = None, None
         sd.map_key += 1; st.rerun()
 
 st.download_button(label="📥 전체 데이터 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
