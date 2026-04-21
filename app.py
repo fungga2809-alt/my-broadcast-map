@@ -24,28 +24,45 @@ if 'df' not in sd:
     except:
         sd.df = pd.DataFrame(columns=CL, dtype=str)
 
-# 세션 상태 변수들
+# 세션 상태 변수 세팅 (타임머신 history 추가)
 defaults = {'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
-            'layer': "위성+도로", 'last_target': None, 'last_mode': "새로 등록"}
+            'layer': "위성+도로", 'last_target': None, 'last_mode': "새로 등록", 'history': []}
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 
-# 채널 입력값 메모리 초기화
 for s in SL:
     if f"i_{s}" not in sd: sd[f"i_{s}"] = ""
+
+# 타임머신 백업 함수 (데이터를 변경하기 직전에 호출)
+def save_history():
+    sd.history.append(sd.df.copy())
+    if len(sd.history) > 10:  # 최근 10번의 작업까지만 기억합니다.
+        sd.history.pop(0)
 
 st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 
 # [2] 사이드바 도구
 with st.sidebar:
     st.header("⚙️ 도구")
+    
+    # 상단 도구창에 '되돌리기' 버튼 추가
+    t_c1, t_c2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
-    if my_p:
-        st.success("📍 GPS 연결됨")
-        if st.button("🎯 내 위치로"):
-            sd.center, sd.t_la, sd.t_lo = my_p, None, None
+    
+    if t_c1.button("🎯 내 위치로"):
+        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, None, None; st.rerun()
+        else: st.toast("GPS를 찾을 수 없습니다.")
+        
+    # [핵심] Ctrl+Z 역할을 하는 되돌리기 버튼
+    if t_c2.button("↩️ 되돌리기"):
+        if sd.history:
+            sd.df = sd.history.pop() # 과거 데이터를 꺼내서 복구
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
+            sd.t_la, sd.t_lo, sd.last_target = None, None, None
             st.rerun()
+        else:
+            st.warning("더 이상 되돌릴 작업이 없습니다!")
 
     st.divider()
     sd.layer = st.radio("🗺️ 지도 모드", ["위성+도로", "순수 위성", "일반 지도"], horizontal=True)
@@ -54,7 +71,7 @@ with st.sidebar:
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
         try:
-            l = Nominatim(user_agent="v57_mgr").geocode(sq)
+            l = Nominatim(user_agent="v58_mgr").geocode(sq)
             if l:
                 sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
                 st.rerun()
@@ -63,7 +80,6 @@ with st.sidebar:
     st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
     
-    # 모드가 바뀌거나 수정 대상이 바뀌면 입력창 자동 초기화
     target_nm = None
     if m_mode == "정보 수정" and not sd.df.empty:
         target_nm = st.selectbox("수정할 시설 선택", sd.df['이름'].tolist())
@@ -85,11 +101,9 @@ with st.sidebar:
             for s in SL: sd[f"i_{s}"] = ""
         sd.last_mode, sd.last_target = m_mode, target_nm
 
-    # 입력 UI
     cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     nm = st.text_input("시설 명칭", key="i_nm")
     
-    # 지도 클릭 시 좌표 갱신 (메모리 유지)
     final_la = sd.t_la if sd.t_la else sd.get("i_la_val", sd.center[0])
     final_lo = sd.t_lo if sd.t_lo else sd.get("i_lo_val", sd.center[1])
     
@@ -104,6 +118,7 @@ with st.sidebar:
 
     if st.button("✅ 저장"):
         if nm:
+            save_history() # 저장하기 전에 현재 상태 백업!
             v = [cat, nm] + [sd[f"i_{s}"] for s in SL] + [str(fla), str(flo), ""]
             if m_mode == "정보 수정" and target_nm:
                 idx = sd.df[sd.df['이름'] == target_nm].index[0]
@@ -118,6 +133,7 @@ with st.sidebar:
         st.divider()
         del_tg = st.selectbox("삭제", sd.df['이름'].tolist(), key="del_box")
         if st.button("🚨 삭제"):
+            save_history() # 삭제하기 전에도 현재 상태 백업!
             sd.df = sd.df[sd.df['이름'] != del_tg]
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
@@ -143,9 +159,8 @@ for _, r in sd.df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v57")
+res = st_folium(m, width="100%", height=800, key="map_v58")
 
-# 지도 클릭 시 좌표만 갱신 (채널 입력값은 세션에 보존됨)
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
     if sd.t_la != la:
