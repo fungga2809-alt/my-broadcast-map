@@ -46,23 +46,21 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
-# [정밀 CSS 주입] 표의 시인성을 위해 폰트 크기 미세 조정 및 정렬 강화
+# [강력한 CSS 주입] 앱 전체의 기본 폰트와 표의 가시성 대폭 향상
 st.markdown("""
     <style>
-    /* 표 헤더와 본문의 글자 크기를 적절하게(15px) 조정하고 중앙 정렬 */
-    div[data-testid="stDataFrame"] div[role="gridcell"] > div {
-        justify-content: center !important;
-        text-align: center !important;
-        font-size: 15px !important;
+    /* 앱 전체 폰트 크기 업그레이드 */
+    html, body, [class*="css"] {
+        font-size: 18px !important;
     }
-    /* 헤더 텍스트 강제 중앙 정렬 */
-    div[data-testid="stDataFrame"] div[role="columnheader"] {
+    /* 표 헤더 글자 크기 및 중앙 정렬 */
+    th {
+        font-size: 20px !important;
         text-align: center !important;
-        justify-content: center !important;
     }
-    /* 사이드바 글자 크기 최적화 */
-    .stSelectbox, .stTextInput, .stRadio {
-        font-size: 14px !important;
+    /* 사이드바 입력창 폰트 조절 */
+    .stTextInput input {
+        font-size: 18px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -149,36 +147,45 @@ disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_r
 ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
 
+if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+
 for _, r in disp_df.iterrows():
     try:
         p = [float(r['위도']), float(r['경도'])]
         color_code = '#FF0000' if r['구분'] == '송신소' else '#0000FF'
         marker_color = 'red' if r['구분'] == '송신소' else 'blue'
         
-        folium.Marker(p, icon=folium.DivIcon(icon_anchor=(0, 0), html=f'<div style="font-size: 10pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 1px 4px; border-radius: 3px; border: 1px solid {color_code}; white-space: nowrap;">{r["이름"]}</div>')).add_to(m)
-        folium.Marker(p, icon=folium.Icon(color=marker_color, icon='tower-broadcast', prefix='fa')).add_to(m)
+        folium.Marker(
+            p,
+            icon=folium.DivIcon(
+                icon_anchor=(0, 0),
+                html=f'<div style="font-size: 11pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; border: 1px solid {color_code}; white-space: nowrap;">{r["이름"]}</div>',
+            )
+        ).add_to(m)
+        
+        folium.Marker(
+            p, 
+            popup=folium.Popup(f"[{r['구분']}] {r['이름']}", max_width=200), 
+            icon=folium.Icon(color=marker_color, icon='tower-broadcast', prefix='fa')
+        ).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=600, key=f"map_v84_{sd.map_key}")
+st_folium(m, width="100%", height=600, key=f"map_v82_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (중앙 정렬 및 시인성 최적화)
+# [4] 하단: 데이터 관리 현황 (중앙 정렬 및 폰트 대형화)
 # ---------------------------------------------------------
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
-# [핵심] 중앙 정렬을 위한 컬럼 설정
-config_dict = {
-    col: st.column_config.Column(
-        label=col,
-        width="medium",
-        alignment="center",  # 본문 중앙 정렬
-    ) for col in CL
-}
+# [중요] 모든 컬럼을 중앙 정렬하는 설정 생성
+# TextColumn을 사용하여 alignment="center"를 강제 적용합니다.
+cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
 
+# 행별 색상 스타일링
 def style_row(row):
     color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
-    return [f"{color} font-weight: 500;" for _ in row]
+    return [color for _ in row]
 
 styled_df = disp_df[CL].style.apply(style_row, axis=1)
 
@@ -188,7 +195,7 @@ event = st.dataframe(
     on_select="rerun", 
     selection_mode="single-row", 
     hide_index=True, 
-    column_config=config_dict,
+    column_config=cfg,  # 중앙 정렬 설정 적용
     key="main_table"
 )
 
