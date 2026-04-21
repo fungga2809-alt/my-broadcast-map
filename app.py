@@ -47,32 +47,27 @@ def save_history():
     if len(sd.history) > 10: sd.history.pop(0)
 
 # ---------------------------------------------------------
-# [2] 사이드바: 지역 필터 및 데이터 제어
+# [2] 사이드바: 지역 필터 및 제어 도구
 # ---------------------------------------------------------
 with st.sidebar:
-    st.header("⚙️ 지역 필터 설정")
+    st.header("⚙️ 지역 및 도구")
     
-    # [핵심] 지역 필터링 메뉴
     if not sd.df.empty:
         regs = ["전체"] + sorted(sd.df['지역'].unique().tolist())
     else:
         regs = ["전체"]
     
     if sd.sel_reg not in regs: sd.sel_reg = "전체"
-    
-    # 지역 선택 시 즉각 반영
     new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg))
     
     if new_reg != sd.sel_reg:
         sd.sel_reg = new_reg
         reg_df = sd.df[sd.df['지역'] == new_reg] if new_reg != "전체" else sd.df
         if not reg_df.empty:
-            # 해당 지역의 첫 번째 시설로 지도 중심점 이동
             sd.center = [float(reg_df.iloc[0]['위도']), float(reg_df.iloc[0]['경도'])]
             sd.map_key += 1
         st.rerun()
 
-    st.divider()
     btn_col1, btn_col2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
@@ -87,8 +82,6 @@ with st.sidebar:
 
     st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
-    
-    # 필터링된 지역 내에서만 수정 대상 선택 가능
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     target_nm = st.selectbox("수정 대상 선택", f_df['이름'].tolist()) if m_mode == "정보 수정" and not f_df.empty else None
         
@@ -100,25 +93,22 @@ with st.sidebar:
             for s in SL: sd[f"i_{s}"] = str(row[s])
             sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]]
         else:
-            # 새로 등록 시 현재 선택된 지역을 기본값으로 세팅
             sd["i_reg"] = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시"
             sd["i_cat"], sd["i_nm"] = "중계소", ""
             for s in SL: sd[f"i_{s}"] = ""
         sd.last_mode, sd.last_target = m_mode, target_nm
 
-    st.text_input("지역 이름", key="i_reg", help="예: 경상남도 양산시")
-    st.radio("시설 구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
+    st.text_input("지역", key="i_reg")
+    st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     st.text_input("시설 명칭", key="i_nm")
-    
-    la_val = sd.t_la if sd.t_la else sd.get("i_la_fixed", sd.center[0])
-    lo_val = sd.t_lo if sd.t_lo else sd.get("i_lo_fixed", sd.center[1])
+    la_val, lo_val = sd.t_la if sd.t_la else sd.get("i_la_fixed", sd.center[0]), sd.t_lo if sd.t_lo else sd.get("i_lo_fixed", sd.center[1])
     fla, flo = st.number_input("위도", value=float(la_val), format="%.6f"), st.number_input("경도", value=float(lo_val), format="%.6f")
 
     st.write("📺 **채널 정보**")
     for s in SL: st.text_input(s, key=f"i_{s}")
 
     if st.button("✅ 데이터 저장"):
-        if sd["i_nm"] and sd["i_reg"]:
+        if sd["i_nm"]:
             save_history()
             v = [sd["i_reg"], sd["i_cat"], sd["i_nm"]] + [sd[f"i_{s}"] for s in SL] + [str(fla), str(flo), ""]
             if m_mode == "정보 수정" and target_nm:
@@ -129,38 +119,59 @@ with st.sidebar:
             sd.t_la, sd.t_lo = None, None; st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도 및 데이터 현황 (필터링 반영)
+# [3] 본문: 지도 출력 (글자 색상 커스텀 적용)
 # ---------------------------------------------------------
-st.markdown(f"### 📡 {sd.sel_reg} 방송 인프라 지도")
+st.markdown(f"### 📡 {sd.sel_reg} 방송 인프라 마스터")
 
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-# 지도 출력
 ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
 
+if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+
 for _, r in disp_df.iterrows():
     try:
-        p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        txt = f"<b>[{r['지역']}] {r['이름']}</b>"
-        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
+        p = [float(r['위도']), float(r['경도'])]
+        # [변경] 송신소=red, 중계소=blue로 색상값 할당
+        color_code = '#FF0000' if r['구분'] == '송신소' else '#0000FF'
+        marker_color = 'red' if r['구분'] == '송신소' else 'blue'
+        
+        # 팝업 내 글자 색상 적용 (HTML)
+        popup_html = f"""
+        <div style="font-family: 'Malgun Gothic'; width: 200px;">
+            <b style="color:{color_code}; font-size: 14px;">[{r['구분']}] {r['이름']}</b><br>
+            <hr style="margin: 5px 0;">
+            <span style="font-size: 12px;">DTV: {r['KBS1']} | {r['MBC']} | {r['SBS']}</span>
+        </div>
+        """
+        
+        # 지도 위에 이름표(라벨)를 항상 띄우기 (DivIcon 활용)
+        folium.Marker(
+            p,
+            icon=folium.DivIcon(
+                icon_anchor=(0, 0),
+                html=f'<div style="font-size: 10pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.7); padding: 2px; border-radius: 3px; border: 1px solid {color_code}; width: max-content;">{r['이름']}</div>',
+            )
+        ).add_to(m)
+        
+        # 기본 마커 아이콘
+        folium.Marker(
+            p, 
+            popup=folium.Popup(popup_html, max_width=300), 
+            icon=folium.Icon(color=marker_color, icon='tower-broadcast', prefix='fa')
+        ).add_to(m)
     except: pass
+
 if sd.t_la: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-st_folium(m, width="100%", height=600, key=f"map_v77_{sd.map_key}")
+st_folium(m, width="100%", height=600, key=f"map_v78_{sd.map_key}")
 
+# ---------------------------------------------------------
+# [4] 하단: 상세 목록
+# ---------------------------------------------------------
 st.divider()
-st.subheader(f"📊 {sd.sel_reg} 상세 목록 (클릭 시 해당 위치로 점프)")
-
-# 표 출력 및 선택 동기화
-event = st.dataframe(
-    disp_df[CL], 
-    use_container_width=True, 
-    on_select="rerun", 
-    selection_mode="single-row",
-    hide_index=True,
-    key="main_table"
-)
+event = st.dataframe(disp_df[CL], use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
 
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
@@ -168,11 +179,9 @@ if event and event.get("selection", {}).get("rows"):
     try:
         new_la, new_lo = float(sel_row['위도']), float(sel_row['경도'])
         if sd.center != [new_la, new_lo]:
-            sd.center = [new_la, new_lo]
-            sd.t_la, sd.t_lo = new_la, new_lo
+            sd.center, sd.t_la, sd.t_lo = [new_la, new_lo], new_la, new_lo
             sd.map_key += 1; st.rerun()
     except: pass
 
-# CSV 백업 버튼
 csv_data = sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 st.download_button(label="📥 전체 데이터 CSV 백업", data=csv_data, file_name='stations.csv', mime='text/csv')
