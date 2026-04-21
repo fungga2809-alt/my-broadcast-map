@@ -44,25 +44,38 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
-# [CSS 주입] 표의 텍스트 크기만 살짝 키우는 최소한의 코드
+# [강력한 CSS 주입] v82의 핵심인 시원시원한 폰트 크기 설정
 st.markdown("""
     <style>
-    /* 표 내부 글자 크기 조절 */
-    [data-testid="stDataFrame"] {
-        font-size: 16px !important;
+    /* 앱 전체 폰트 크기 업그레이드 */
+    html, body, [class*="css"] {
+        font-size: 18px !important;
     }
-    /* 사이드바 글자 크기 유지 */
-    .stSidebar { font-size: 15px !important; }
+    /* 표 헤더 글자 크기 및 중앙 정렬 */
+    th {
+        font-size: 20px !important;
+        text-align: center !important;
+    }
+    /* 사이드바 입력창 폰트 조절 */
+    .stTextInput input {
+        font-size: 18px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: 모든 기능 정상 복구
+# [2] 사이드바: 지역 필터 및 제어 도구
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 지역 및 도구")
-    regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
-    new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
+    
+    if not sd.df.empty:
+        regs = ["전체"] + sorted(sd.df['지역'].unique().tolist())
+    else:
+        regs = ["전체"]
+    
+    if sd.sel_reg not in regs: sd.sel_reg = "전체"
+    new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg))
     
     if new_reg != sd.sel_reg:
         sd.sel_reg = new_reg
@@ -75,8 +88,10 @@ with st.sidebar:
     btn_col1, btn_col2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
+    
     if btn_col1.button("🎯 내 위치"):
         if my_p: sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]; sd.map_key += 1; st.rerun()
+        
     if btn_col2.button("↩️ 되돌리기"):
         if sd.history:
             sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
@@ -133,25 +148,17 @@ for _, r in disp_df.iterrows():
         folium.Marker(p, icon=folium.Icon(color=('red' if r['구분'] == '송신소' else 'blue'), icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=500, key=f"map_v89_{sd.map_key}")
+st_folium(m, width="100%", height=500, key=f"map_v82_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (표 중앙 정렬 최적화)
+# [4] 하단: 데이터 관리 현황 (중앙 정렬 및 시원한 뷰)
 # ---------------------------------------------------------
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
-# [가장 확실한 방법] 모든 컬럼에 대해 개별 설정을 생성하여 중앙 정렬 강제
-# column_config를 사용하면 '제목'과 '내용'이 세트로 중앙 정렬됩니다.
-config_dict = {
-    col: st.column_config.Column(
-        label=col,
-        alignment="center", # 👈 전체 컬럼 중앙 정렬
-        width="medium"
-    ) for col in CL
-}
+# 모든 컬럼을 중앙 정렬하는 설정
+cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
 
-# 행별 색상만 깔끔하게 입히기
 def style_row(row):
     color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
     return [color for _ in row]
@@ -164,7 +171,7 @@ event = st.dataframe(
     on_select="rerun", 
     selection_mode="single-row", 
     hide_index=True, 
-    column_config=config_dict, # 중앙 정렬 설정 적용
+    column_config=cfg, 
     key="main_table"
 )
 
