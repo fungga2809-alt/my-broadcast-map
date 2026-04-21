@@ -64,7 +64,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v101")
+                geolocator = Nominatim(user_agent="broadcasting_master_v102")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
@@ -154,7 +154,8 @@ for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
         
-        # [핵심 수정] 이름표 바탕 확대 및 위치 조정 (transform으로 마커 위로 올림)
+        # [핵심 수정] 마커와 이름표가 겹치지 않게 우측 상단으로 오프셋 이동
+        # translate(10px, -45px)로 우측으로 10픽셀, 위쪽으로 45픽셀 이동시켜 가림 현상 방지
         label_html = f'''
             <div style="
                 display: inline-block;
@@ -167,12 +168,11 @@ for _, r in disp_df.iterrows():
                 font-weight: bold;
                 white-space: nowrap;
                 box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-                transform: translate(-50%, -42px);
+                transform: translate(10px, -45px);
             ">
                 {r["이름"]}
             </div>
         '''
-        # icon_anchor를 (0,0)으로 잡고 위 CSS transform으로 정확히 마커 머리 위 중앙에 배치
         folium.Marker(p, icon=folium.DivIcon(html=label_html, icon_anchor=(0,0))).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
@@ -180,7 +180,7 @@ for _, r in disp_df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v101_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v102_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
