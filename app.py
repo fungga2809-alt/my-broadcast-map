@@ -15,7 +15,7 @@ CL = ['구분','이름'] + SL + ['위도','경도','메모']
 
 sd = st.session_state
 
-# [1] 데이터 로드 및 초기화
+# [1] 데이터 로드
 if 'df' not in sd:
     try:
         sd.df = pd.read_csv(DB, dtype=str).fillna("")
@@ -37,22 +37,18 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
-# [핵심] 도분초(DMS)를 소수점(DD)으로 변환하는 함수
 def parse_dms(dms_str):
     try:
-        # 35°07'30.02"N 128°53'27.94"E 형태를 분석하는 정규식
         pattern = r"(\d+)°(\d+)'([\d.]+)\"([NSEW])"
         parts = re.findall(pattern, dms_str)
         if len(parts) != 2: return None, None
-        
         results = []
         for d, m, s, h in parts:
             dd = float(d) + float(m)/60 + float(s)/3600
             if h in ['S', 'W']: dd = -dd
             results.append(round(dd, 6))
-        return results[0], results[1] # 위도, 경도 반환
-    except:
-        return None, None
+        return results[0], results[1]
+    except: return None, None
 
 st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 
@@ -77,21 +73,22 @@ with st.sidebar:
     sd.layer = st.radio("🗺️ 지도 모드", ["위성+도로", "순수 위성", "일반 지도"], horizontal=True)
 
     st.divider()
-    # [수정] 주소와 DMS 좌표를 모두 처리하는 검색창
-    sq = st.text_input("📍 주소/DMS 좌표 검색", help="주소나 '35°07'30\"N 128°53'27\"E' 형태를 넣으세요")
+    sq = st.text_input("📍 주소/DMS 좌표 검색", help="예: 35°07'30\"N 128°53'27\"E")
     if st.button("🔍 찾기"):
-        # 1. 먼저 DMS 좌표인지 확인
         d_la, d_lo = parse_dms(sq)
         if d_la and d_lo:
-            sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]
-            st.success("DMS 좌표 변환 완료")
+            # 포인트가 생기도록 세션 좌표를 강제 업데이트합니다.
+            sd.t_la, sd.t_lo = d_la, d_lo
+            sd.center = [d_la, d_lo]
+            sd["i_la_val"], sd["i_lo_val"] = d_la, d_lo # 입력창 좌표도 즉시 동기화
+            st.success("DMS 위치 확인")
             st.rerun()
         else:
-            # 2. 아니면 일반 주소 검색 진행
             try:
-                l = Nominatim(user_agent="v59_mgr").geocode(sq)
+                l = Nominatim(user_agent="v60_mgr").geocode(sq)
                 if l:
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
+                    sd["i_la_val"], sd["i_lo_val"] = l.latitude, l.longitude
                     st.rerun()
             except: st.error("검색 결과가 없습니다.")
 
@@ -118,9 +115,9 @@ with st.sidebar:
     cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     nm = st.text_input("시설 명칭", key="i_nm")
     
-    # 좌표 동기화 (검색 결과나 클릭 결과 반영)
-    final_la = sd.t_la if sd.t_la else sd.get("i_la_val", sd.center[0])
-    final_lo = sd.t_lo if sd.t_lo else sd.get("i_lo_val", sd.center[1])
+    # [핵심] 검색 결과(t_la)가 있으면 최우선 반영, 없으면 기존 입력값 사용
+    final_la = sd.t_la if sd.t_la is not None else sd.get("i_la_val", sd.center[0])
+    final_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_val", sd.center[1])
     
     fla = st.number_input("위도", value=float(final_la), format="%.6f")
     flo = st.number_input("경도", value=float(final_lo), format="%.6f")
@@ -168,11 +165,13 @@ for _, r in sd.df.iterrows():
         folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-if sd.t_la:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
+# 검색된 포인트(초록색 마커) 표시
+if sd.t_la is not None:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v59")
+res = st_folium(m, width="100%", height=800, key="map_v60")
 
+# 지도 클릭 시 좌표 갱신
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
     if sd.t_la != la:
