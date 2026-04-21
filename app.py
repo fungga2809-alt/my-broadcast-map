@@ -82,7 +82,7 @@ with st.sidebar:
             sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]; st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v68_mgr").geocode(sq)
+                l = Nominatim(user_agent="v69_mgr").geocode(sq)
                 if l: sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]; st.rerun()
             except: st.error("검색 결과가 없습니다.")
 
@@ -158,7 +158,7 @@ for _, r in sd.df.iterrows():
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v68")
+res = st_folium(m, width="100%", height=800, key="map_v69")
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
     if sd.t_la != la: sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
@@ -170,21 +170,19 @@ c1.subheader("📊 데이터 관리 현황")
 csv_data = sd.df[CL].to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 c2.download_button(label="📥 최신 CSV 받기", data=csv_data, file_name='stations.csv', mime='text/csv')
 
-# [핵심] 표에서 행을 클릭하면 지도를 이동시키는 설정
+# [에러 해결 핵심] selection_mode를 "single-row"(하이픈)로 변경
 selected = st.dataframe(
     sd.df[CL], 
     use_container_width=True, 
     on_select="rerun", 
-    selection_mode="single_row"
+    selection_mode="single-row"
 )
 
-# 표에서 특정 행이 선택되었을 때의 동작
-if selected and len(selected["selection"]["rows"]) > 0:
+if selected and len(selected.get("selection", {}).get("rows", [])) > 0:
     idx = selected["selection"]["rows"][0]
     sel_row = sd.df.iloc[idx]
     try:
         new_lat, new_lon = float(sel_row['위도']), float(sel_row['경도'])
-        # 지도의 중심과 초록색 마커를 선택된 시설 위치로 이동
         if sd.center != [new_lat, new_lon]:
             sd.center = [new_lat, new_lon]
             sd.t_la, sd.t_lo = new_lat, new_lon
