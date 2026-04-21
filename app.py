@@ -154,8 +154,8 @@ st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='c
 # 1. 특정 컬럼(구분)만 중앙 정렬하는 설정
 config_dict = {
     "구분": st.column_config.TextColumn("구분", alignment="center", width="small"),
-    "지역": st.column_config.TextColumn("지역", alignment="left"),
-    "이름": st.column_config.TextColumn("이름", alignment="left")
+    "지역": st.column_config.TextColumn("지역", alignment="center"),
+    "이름": st.column_config.TextColumn("이름", alignment="center")
 }
 
 # 2. 행별 색상 및 채널 폰트 크기 지정 함수
