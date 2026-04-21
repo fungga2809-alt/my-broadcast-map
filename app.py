@@ -46,6 +46,23 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
+# [CSS 주입] 표의 폰트 크기 확대 및 중앙 정렬
+st.markdown("""
+    <style>
+    /* 데이터프레임 셀 텍스트 중앙 정렬 및 폰트 크기 조정 */
+    [data-testid="stTable"] td, [data-testid="stDataFrame"] td {
+        text-align: center !important;
+        font-size: 16px !important;
+    }
+    /* 헤더 텍스트 중앙 정렬 */
+    [data-testid="stTable"] th, [data-testid="stDataFrame"] th {
+        text-align: center !important;
+        font-size: 17px !important;
+        font-weight: bold !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # ---------------------------------------------------------
 # [2] 사이드바: 지역 필터 및 제어 도구
 # ---------------------------------------------------------
@@ -140,7 +157,7 @@ for _, r in disp_df.iterrows():
             p,
             icon=folium.DivIcon(
                 icon_anchor=(0, 0),
-                html=f'<div style="font-size: 10pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 4px; border-radius: 3px; border: 1px solid {color_code}; white-space: nowrap;">{r["이름"]}</div>',
+                html=f'<div style="font-size: 11pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; border: 1px solid {color_code}; white-space: nowrap;">{r["이름"]}</div>',
             )
         ).add_to(m)
         
@@ -151,21 +168,20 @@ for _, r in disp_df.iterrows():
         ).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=600, key=f"map_v80_{sd.map_key}")
+st_folium(m, width="100%", height=600, key=f"map_v81_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (표 텍스트 색상 구분 적용)
+# [4] 하단: 데이터 관리 현황 (스타일링 보강)
 # ---------------------------------------------------------
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
-# [핵심] 표 텍스트 색상 스타일링 함수
-def style_row_by_type(row):
+# 행별 색상 및 중앙 정렬 스타일링 함수
+def style_row(row):
     color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
-    return [color] * len(row)
+    return [f'{color} text-align: center;' for _ in row]
 
-# 스타일 적용된 데이터프레임 생성
-styled_df = disp_df[CL].style.apply(style_row_by_type, axis=1)
+styled_df = disp_df[CL].style.apply(style_row, axis=1)
 
 event = st.dataframe(
     styled_df, 
