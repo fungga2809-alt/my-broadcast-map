@@ -25,24 +25,31 @@ if 'df' not in sd:
 if 'center' not in sd: sd.center = [35.1796, 129.0756]
 if 't_la' not in sd: sd.t_la = None
 if 't_lo' not in sd: sd.t_lo = None
+if 'layer' not in sd: sd.layer = "위성+도로"
 
 st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 
 with st.sidebar:
     st.header("⚙️ 도구")
     gps = get_geolocation()
-    my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
-    if my_p:
+    if gps and 'coords' in gps:
+        my_p = [gps['coords']['latitude'], gps['coords']['longitude']]
         st.success("📍 GPS 연결됨")
         if st.button("🎯 내 위치로"):
             sd.center = my_p
             st.rerun()
+    else:
+        my_p = None
+
+    st.divider()
+    # 핵심 변경: 지도 안의 버튼을 없애고, 사이드바에 가장 안정적인 레이어 고정 버튼 생성!
+    sd.layer = st.radio("🗺️ 지도 모드", ["위성+도로", "순수 위성", "일반 지도"], horizontal=True)
 
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
         try:
-            l = Nominatim(user_agent="v51_mgr").geocode(sq)
+            l = Nominatim(user_agent="v52_mgr").geocode(sq)
             if l:
                 sd.t_la, sd.t_lo = l.latitude, l.longitude
                 sd.center = [l.latitude, l.longitude]
@@ -81,11 +88,16 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# 지도 바탕을 위성+도로 레이어로 영구 고정
-m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
-folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}', attr='G', name='순수 위성').add_to(m)
-folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}', attr='G', name='일반 지도').add_to(m)
-folium.LayerControl().add_to(m)
+# 선택된 모드에 따라 지도 도화지를 절대적으로 고정시킴
+if sd.layer == "위성+도로":
+    t_url = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
+elif sd.layer == "순수 위성":
+    t_url = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}'
+else:
+    t_url = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
+
+# 지도 생성 (LayerControl 충돌 원천 삭제)
+m = folium.Map(location=sd.center, zoom_start=14, tiles=t_url, attr='G')
 
 if my_p:
     folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
@@ -104,7 +116,7 @@ for _, r in sd.df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v51")
+res = st_folium(m, width="100%", height=800, key="map_v52")
 
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
