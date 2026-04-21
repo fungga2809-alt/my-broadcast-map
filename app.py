@@ -10,7 +10,11 @@ from geopy.geocoders import Nominatim
 
 st.set_page_config(page_title="Broadcasting Master", layout="wide")
 DB = 'stations.csv'
-SL = ['SBS','SBS(U)','KBS2','KBS2(U)','KBS1','KBS1(U)','EBS','EBS(U)','MBC','MBC(U)']
+
+# [변경] 채널 리스트를 그룹 단위로 재정의합니다.
+SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
+SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
+SL = SL_DTV + SL_UHD
 CL = ['구분','이름'] + SL + ['위도','경도','메모']
 
 sd = st.session_state
@@ -57,27 +61,22 @@ st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 with st.sidebar:
     st.header("⚙️ 도구")
     
-    # [복구] 내 위치 찾기 및 되돌리기 버튼 레이아웃
     btn_col1, btn_col2 = st.columns(2)
-    
-    # GPS 위치 가져오기
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     
-    if btn_col1.button("🎯 내 위치", help="현재 GPS 위치로 지도를 이동합니다"):
+    if btn_col1.button("🎯 내 위치"):
         if my_p:
             sd.center = my_p
-            sd.t_la, sd.t_lo = my_p[0], my_p[1] # 마커도 내 위치로 이동
+            sd.t_la, sd.t_lo = my_p[0], my_p[1]
             st.rerun()
-        else:
-            st.error("GPS 신호를 기다리는 중이거나 권한이 없습니다.")
+        else: st.error("GPS 권한을 확인해주세요.")
         
     if btn_col2.button("↩️ 되돌리기"):
         if sd.history:
             sd.df = sd.history.pop()
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo, sd.last_target = None, None, None
-            st.rerun()
+            sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
 
     st.divider()
     sd.layer = st.radio("🗺️ 지도 모드", ["위성+도로", "순수 위성", "일반 지도"], horizontal=True)
@@ -90,7 +89,7 @@ with st.sidebar:
             sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]; st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v65_mgr").geocode(sq)
+                l = Nominatim(user_agent="v66_mgr").geocode(sq)
                 if l:
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]; st.rerun()
             except: st.error("검색 결과가 없습니다.")
@@ -121,14 +120,19 @@ with st.sidebar:
     curr_la = sd.t_la if sd.t_la is not None else sd.get("i_la_fixed", sd.center[0])
     curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
     
-    fla = st.number_input("위도", value=float(curr_la), format="%.6f")
-    flo = st.number_input("경도", value=float(curr_lo), format="%.6f")
+    fla, flo = st.number_input("위도", value=float(curr_la), format="%.6f"), st.number_input("경도", value=float(curr_lo), format="%.6f")
 
-    st.write("📺 채널 (DTV | UHD)")
-    for i in range(0, len(SL), 2):
-        c1, c2 = st.columns(2)
-        c1.text_input(SL[i], key=f"i_{SL[i]}")
-        c2.text_input(SL[i+1], key=f"i_{SL[i+1]}")
+    # [수정] 채널 입력 UI 그룹화
+    st.divider()
+    st.write("📺 **DTV 채널 (디지털)**")
+    dtv_cols = st.columns(3)
+    for idx, s in enumerate(SL_DTV):
+        dtv_cols[idx % 3].text_input(s, key=f"i_{s}")
+
+    st.write("✨ **UHD 채널**")
+    uhd_cols = st.columns(3)
+    for idx, s in enumerate(SL_UHD):
+        uhd_cols[idx % 3].text_input(s, key=f"i_{s}")
 
     if st.button("✅ 저장"):
         if nm:
@@ -146,13 +150,11 @@ with st.sidebar:
         st.divider()
         del_tg = st.selectbox("삭제 시설 선택", sd.df['이름'].tolist(), key="del_box")
         if st.button("🚨 시설 삭제"):
-            save_history()
-            sd.df = sd.df[sd.df['이름'] != del_tg]
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            st.rerun()
+            save_history(); sd.df = sd.df[sd.df['이름'] != del_tg]
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
 # [3] 지도 출력
-ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위성+도로" else \
+ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위 satellite" else \
      'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
      'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
@@ -162,17 +164,16 @@ if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).ad
 for _, r in sd.df.iterrows():
     try:
         p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
-        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
-        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d}"
+        dt = " | ".join([f"{s}:{r[s]}" for s in SL_DTV if str(r[s]).strip() != ""])
+        uh = " | ".join([f"{s}:{r[s]}" for s in SL_UHD if str(r[s]).strip() != ""])
+        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}"
         folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v65")
+res = st_folium(m, width="100%", height=800, key="map_v66")
 
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
@@ -183,13 +184,6 @@ if res and res.get('last_clicked'):
 st.divider()
 c1, c2 = st.columns([8, 2])
 c1.subheader("📊 데이터 관리 현황")
-
 csv_data = sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-c2.download_button(
-    label="📥 최신 CSV 받기",
-    data=csv_data,
-    file_name='stations.csv',
-    mime='text/csv'
-)
-
+c2.download_button(label="📥 최신 CSV 받기", data=csv_data, file_name='stations.csv', mime='text/csv')
 st.dataframe(sd.df, use_container_width=True)
