@@ -41,25 +41,17 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] v82 스타일 대형 폰트 및 v70 그룹화 스타일
+# [CSS] v82 스타일 대형 폰트 및 UI 정돈
 st.markdown("""
     <style>
-    /* 앱 전체 기본 폰트 크기 (v82 스타일) */
     html, body, [class*="css"] { font-size: 18px !important; }
-    
-    /* 표 헤더 중앙 정렬 및 배경색 */
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; }
-    
-    /* 버튼 스타일 */
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; }
-    
-    /* 사이드바 그룹 강조 */
-    .stInfo, .stWarning { padding: 5px 10px !important; margin-bottom: 5px !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v70 디자인 및 검색/수정 로직
+# [2] 사이드바: v70 디자인 및 검색/수정 로직 (연동 강화)
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -68,18 +60,17 @@ with st.sidebar:
     regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
     sd.sel_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
 
-    # 주소 검색
+    # 주소 검색 (v97 핵심: 검색 시 t_la를 설정하고 초기화 방지)
     st.subheader("🔍 주소/지명 검색")
     search_addr = st.text_input("검색할 주소 또는 건물명", key="addr_input")
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v96")
+                geolocator = Nominatim(user_agent="broadcasting_master_v97")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
                     sd.t_la, sd.t_lo = location.latitude, location.longitude
-                    sd.m_mode = "새로 등록"
                     sd.map_key += 1; st.rerun()
             except: st.error("검색 엔진 오류")
 
@@ -87,18 +78,19 @@ with st.sidebar:
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     if c1.button("🎯 내 위치"):
-        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]; sd.m_mode = "새로 등록"; sd.map_key += 1; st.rerun()
+        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]; sd.map_key += 1; st.rerun()
     if c2.button("↩️ 되돌리기"):
         if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
 
-    # 모드 설정
+    # 모드 설정 (v97: 모드 전환 시 검색 좌표를 함부로 지우지 않음)
     prev_mode = sd.m_mode
     sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
     
     if prev_mode != sd.m_mode and sd.m_mode == "새로 등록":
-        sd.target_nm, sd.t_la, sd.t_lo = None, None, None
+        # 수동으로 새로 등록 클릭 시에만 대상 초기화 (검색 좌표는 유지)
+        sd.target_nm = None
         for s in SL: sd[f"ch_{s}"] = ""
 
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -110,7 +102,11 @@ with st.sidebar:
         sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx)
         row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
         i_reg, i_cat, i_nm = row['지역'], row['구분'], row['이름']
-        la_v, lo_v = float(row['위도']), float(row['경도'])
+        
+        # [v97 포인트] 검색 좌표가 있으면 검색 좌표 우선, 없으면 기존 좌표
+        la_v = sd.t_la if sd.t_la else float(row['위도'])
+        lo_v = sd.t_lo if sd.t_lo else float(row['경도'])
+        
         for s in SL: sd[f"ch_{s}"] = str(row[s])
     else:
         i_reg, i_cat, i_nm = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시", "중계소", ""
@@ -125,7 +121,7 @@ with st.sidebar:
 
     # [v70 스타일] 채널 정보 그룹화 입력
     st.subheader("📺 채널 정보 (그룹화)")
-    st.info("📡 **DTV 채널 (디지털)**")
+    st.info("📡 **DTV 채널**")
     dtv_cols = st.columns(3)
     for i, s in enumerate(SL_DTV):
         sd[f"ch_{s}"] = dtv_cols[i%3].text_input(s, value=sd[f"ch_{s}"], key=f"inp_{s}")
@@ -144,8 +140,9 @@ with st.sidebar:
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
+            # 저장 후에는 모든 임시 값 초기화
             sd.t_la, sd.t_lo, sd.target_nm, sd.m_mode = None, None, None, "새로 등록"
-            st.rerun()
+            st.success("저장 완료!"); st.rerun()
 
     # [v70 스타일] 시설 삭제 섹션
     st.divider()
@@ -162,9 +159,7 @@ with st.sidebar:
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 
-# [중요] 오류 수정: 데이터 정의 한 줄 추가
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-
 m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
@@ -174,23 +169,23 @@ for _, r in disp_df.iterrows():
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-if sd.t_la and sd.m_mode == "새로 등록":
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='plus')).add_to(m)
+# [v97 포인트] 어떤 모드에서든 검색된 임시 좌표가 있다면 녹색 마커 표시
+if sd.t_la:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=500, key=f"map_v96_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=500, key=f"map_v97_{sd.map_key}")
 
-# 지도 클릭 시 새로 등록 모드 전환
+# 지도 클릭 시 좌표 획득
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
-        sd.t_la, sd.t_lo, sd.m_mode, sd.target_nm = cla, clo, "새로 등록", None
-        for s in SL: sd[f"ch_{s}"] = ""
+        sd.t_la, sd.t_lo = cla, clo
+        # 지도를 직접 클릭했을 때도 기존 입력값은 유지하되 좌표만 업데이트
         st.rerun()
 
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
-# v82 스타일 중앙 정렬 및 색상
 cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
 def style_row(row):
     color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
@@ -200,12 +195,14 @@ styled_df = disp_df[CL].style.apply(style_row, axis=1)
 
 event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, column_config=cfg, key="main_table")
 
-# 표 클릭 시 수정 모드 전환
+# 표 클릭 시 수정 모드 전환 (이때도 검색 좌표가 있다면 유지됨)
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
     if sd.target_nm != sel_row['이름']:
         sd.center, sd.m_mode, sd.target_nm = [float(sel_row['위도']), float(sel_row['경도'])], "정보 수정", sel_row['이름']
+        # 표에서 직접 선택한 경우는 해당 시설의 원래 좌표를 우선 볼 수 있도록 t_la를 잠시 비워도 되지만, 
+        # 검색 후 수정 시나리오를 위해 t_la는 저장 버튼 누르기 전까진 유지합니다.
         sd.map_key += 1; st.rerun()
 
 st.download_button(label="📥 전체 데이터 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
