@@ -46,7 +46,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v48_mgr")
+        g = Nominatim(user_agent="v49_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -60,27 +60,4 @@ with st.sidebar:
     la_v = sd.t_la if sd.t_la else sd.center[0]
     lo_v = sd.t_lo if sd.t_lo else sd.center[1]
     fla = st.number_input("위도", value=float(la_v), format="%.6f")
-    flo = st.number_input("경도", value=float(lo_v), format="%.6f")
-
-    chs = {}
-    st.write("📺 채널 (DTV | UHD)")
-    for i in range(0, len(SL), 2):
-        c1, c2 = st.columns(2)
-        chs[SL[i]] = c1.text_input(SL[i], key=f"i_{SL[i]}")
-        chs[SL[i+1]] = c2.text_input(SL[i+1], key=f"i_{SL[i+1]}")
-
-    if st.button("✅ 저장"):
-        if nm:
-            v = [cat, nm] + [chs[s] for s in SL] + [fla, flo, ""]
-            new_df = pd.DataFrame([v], columns=CL)
-            sd.df = pd.concat([sd.df, new_df], ignore_index=True)
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la = None
-            st.rerun()
-
-    if not sd.df.empty:
-        st.divider()
-        tg = st.selectbox("삭제", sd.df['이름'].tolist())
-        if st.button("🚨 삭제"):
-            sd.df = sd.df[sd.df['이름'] != tg]
-            sd
+    flo = st.number_input
