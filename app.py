@@ -7,12 +7,12 @@ import os, json
 import streamlit.components.v1 as components
 
 # [1] 기본 설정
-st.set_page_config(page_title="중계소 관리", layout="wide")
+st.set_page_config(page_title="중계소 관리 PRO", layout="wide")
 DB = 'stations.csv'
 ST_LIST = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 COLS = ['이름'] + ST_LIST + ['위도', '경도', '메모']
 
-# [2] 데이터 로드 로직
+# [2] 데이터 로드
 if 'df' not in st.session_state:
     if os.path.exists(DB):
         try:
@@ -22,38 +22,73 @@ if 'df' not in st.session_state:
         except: st.session_state.df = pd.DataFrame(columns=COLS)
     else: st.session_state.df = pd.DataFrame(columns=COLS)
 
-# [3] 세션 변수 초기화
+# [3] 세션 변수
 for k, v in {'map_center':[35.1796, 129.0756], 'my_loc':None, 'my_heading':0, 'temp_lat':None, 'temp_lon':None}.items():
     if k not in st.session_state: st.session_state[k] = v
 
-st.title("📡 중계소 통합 관리 시스템 (GPS/방향)")
+st.title("📡 중계소 통합 관리 (GPS/방향)")
 
-# [4] 센서 제어 자바스크립트
+# [4] 강화된 센서 제어 자바스크립트 (진단 기능 포함)
 ui_js = """
-<div style="background:#f0f2f6;padding:10px;border-radius:10px;text-align:center;">
-<button id="b" style="width:100%;padding:12px;background:#FF4B4B;color:white;border:none;border-radius:5px;font-weight:bold;">🧭 센서/GPS 켜기</button>
-<p id="m" style="font-size:11px;margin-top:8px;">부채꼴이 안 보이면 버튼을 누르세요.</p>
+<div style="background:#f0f2f6;padding:12px;border-radius:10px;text-align:center;border:1px solid #ccc;">
+<button id="b" style="width:100%;padding:15px;background:#FF4B4B;color:white;border:none;border-radius:8px;font-weight:bold;font-size:16px;">🧭 센서/GPS 활성화</button>
+<p id="m" style="font-size:12px;margin-top:10px;color:#333;">버튼을 누르면 위치와 방향을 잡습니다.</p>
 </div>
 <script>
 const b=document.getElementById('b'), m=document.getElementById('m');
-b.onclick=function(){
-navigator.geolocation.watchPosition((p)=>{
-const d={lat:p.coords.latitude,lon:p.coords.longitude,t:'l'};
-window.parent.postMessage({type:'streamlit:setComponentValue',value:JSON.stringify(d)},'*');
-m.innerText="📍 GPS 연결됨";
-},{enableHighAccuracy:true});
-if(typeof DeviceOrientationEvent.requestPermission==='function'){
-DeviceOrientationEvent.requestPermission().then(s=>{if(s==='granted')st();});
-}else{st();}
-};
-function st(){
-window.addEventListener('deviceorientationabsolute',(e)=>{
-if(e.alpha!==null){
-const d={a:e.alpha,t:'o'};
-window.parent.postMessage({type:'streamlit:setComponentValue',value:JSON.stringify(d)},'*');
-m.innerText="🧭 방향 감지: "+Math.round(e.alpha)+"°";
+
+function send(data) {
+    window.parent.postMessage({type:'streamlit:setComponentValue', value:JSON.stringify(data)}, '*');
 }
-},true);
+
+b.onclick = async function() {
+    m.innerText = "⏳ 권한 요청 중...";
+    
+    // 1. 위치 정보(GPS) 요청
+    navigator.geolocation.getCurrentPosition(
+        (p) => {
+            send({lat:p.coords.latitude, lon:p.coords.longitude, t:'l'});
+            m.innerText = "📍 GPS 연결 성공!";
+        },
+        (e) => {
+            alert("GPS 오류: " + e.message + "\\n설정에서 위치 권한을 허용해주세요.");
+            m.innerText = "❌ GPS 연결 실패";
+        },
+        {enableHighAccuracy:true}
+    );
+
+    // 2. 방향 정보(나침반) 요청
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS(아이폰) 대응
+        try {
+            const res = await DeviceOrientationEvent.requestPermission();
+            if (res === 'granted') {
+                startOri();
+            } else {
+                alert("방향 센서 권한이 거절되었습니다.");
+            }
+        } catch (e) { alert("센서 요청 중 에러 발생"); }
+    } else {
+        // 안드로이드 등 일반 브라우저
+        startOri();
+    }
+};
+
+function startOri() {
+    window.addEventListener('deviceorientationabsolute', (e) => {
+        if (e.alpha !== null) {
+            send({a:e.alpha, t:'o'});
+            m.innerText = "🧭 센서 작동 중 (" + Math.round(e.alpha) + "°)";
+        }
+    }, true);
+    // absolute가 안 먹히는 경우 일반 orientation 시도
+    window.addEventListener('deviceorientation', (e) => {
+        if (e.webkitCompassHeading) { // iOS 전용
+            send({a:360-e.webkitCompassHeading, t:'o'});
+        } else if (e.alpha !== null && !e.absolute) {
+            send({a:e.alpha, t:'o'});
+        }
+    }, true);
 }
 </script>
 """
@@ -61,7 +96,7 @@ m.innerText="🧭 방향 감지: "+Math.round(e.alpha)+"°";
 # [5] 사이드바 기능
 with st.sidebar:
     st.header("⚙️ 설정")
-    sd = components.html(ui_js, height=140)
+    sd = components.html(ui_js, height=160)
     if sd:
         try:
             r = json.loads(sd)
@@ -75,7 +110,7 @@ with st.sidebar:
 
     st.divider()
     st.header("📍 등록")
-    n = st.text_input("이름")
+    n = st.text_input("중계소 이름")
     chs = {}
     c1, c2 = st.columns(2)
     for i, s in enumerate(ST_LIST):
@@ -94,16 +129,7 @@ with st.sidebar:
             st.session_state.temp_lat = None
             st.rerun()
 
-    st.divider()
-    if not st.session_state.df.empty:
-        st.header("🗑️ 삭제")
-        dt = st.selectbox("삭제대상", st.session_state.df['이름'].tolist())
-        if st.button("🚨 삭제"):
-            st.session_state.df = st.session_state.df[st.session_state.df['이름']!=dt]
-            st.session_state.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            st.rerun()
-
-# [6] 지도 그리기
+# [6] 지도 및 리스트 (이전과 동일)
 m = folium.Map(location=st.session_state.map_center, zoom_start=14)
 folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G', name='위성').add_to(m)
 
@@ -115,17 +141,12 @@ if st.session_state.my_loc:
 for _, r in st.session_state.df.iterrows():
     try:
         p = [float(r['위도']), float(r['경도'])]
-        dist = ""
-        if st.session_state.my_loc:
-            dist = f"<br>📏 {round(geodesic(st.session_state.my_loc, p).km, 2)}km"
+        dist = f"<br>📏 {round(geodesic(st.session_state.my_loc, p).km, 2)}km" if st.session_state.my_loc else ""
         ch = " | ".join([f"{s}:{r[s]}" for s in ST_LIST if pd.notna(r[s]) and str(r[s]).strip() != ""])
         folium.Marker(location=p, popup=f"<b>{r['이름']}</b><br>{ch}{dist}", icon=folium.Icon(color='red', icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-if st.session_state.temp_lat:
-    folium.Marker(location=[st.session_state.temp_lat, st.session_state.temp_lon], icon=folium.Icon(color='green')).add_to(m)
-
-res = st_folium(m, width=1000, height=600, key="m_v20")
+res = st_folium(m, width=1000, height=600, key="m_final")
 if res and res.get('last_clicked'):
     lat, lon = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
     if st.session_state.temp_lat != lat:
