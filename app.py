@@ -150,7 +150,7 @@ st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
 # [핵심 수정] 모든 컬럼을 강제로 중앙 정렬(center)로 설정
-config_dict = {col: st.column_config.Column(alignment="center") for col in CL}
+config_dict = {col: st.column_config.TextColumn(label=col, alignment="center") for col in CL}
 
 # 행별 색상 및 채널 폰트 크기 지정 함수
 def apply_custom_style(df):
