@@ -25,6 +25,7 @@ if 'df' not in sd:
     except:
         sd.df = pd.DataFrame(columns=CL, dtype=str)
 
+# 세션 상태 초기화 (history, center 등)
 defaults = {'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
             'layer': "위성+도로", 'last_target': None, 'last_mode': "새로 등록", 'history': []}
 for k, v in defaults.items():
@@ -61,9 +62,7 @@ with st.sidebar:
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     
     if t_c1.button("🎯 내 위치로"):
-        if my_p: 
-            sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]
-            st.rerun()
+        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, None, None; st.rerun()
         
     if t_c2.button("↩️ 되돌리기"):
         if sd.history:
@@ -75,14 +74,11 @@ with st.sidebar:
     sd.layer = st.radio("🗺️ 지도 모드", ["위성+도로", "순수 위성", "일반 지도"], horizontal=True)
 
     st.divider()
-    sq = st.text_input("📍 주소/DMS 좌표 검색", help="예: 35°07'30\"N 128°53'27\"E")
+    sq = st.text_input("📍 주소/DMS 좌표 검색")
     if st.button("🔍 찾기"):
         d_la, d_lo = parse_dms(sq)
         if d_la and d_lo:
-            # 좌표 고정력 강화
-            sd.t_la, sd.t_lo = d_la, d_lo
-            sd.center = [d_la, d_lo]
-            st.success(f"좌표 변환: {d_la}, {d_lo}")
+            sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]
             st.rerun()
         else:
             try:
@@ -95,32 +91,34 @@ with st.sidebar:
     st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
     
+    # 수정 모드 시 시설 선택 처리
     target_nm = None
     if m_mode == "정보 수정" and not sd.df.empty:
         target_nm = st.selectbox("수정할 시설 선택", sd.df['이름'].tolist())
         
+    # [핵심] 모드나 대상 시설이 '바뀔 때만' 마커를 초기화합니다. (단순 클릭 시에는 유지)
     if sd.last_mode != m_mode or sd.last_target != target_nm:
-        sd.t_la, sd.t_lo = None, None
+        sd.t_la, sd.t_lo = None, None # 선택 변경 시에만 초기화!
         if m_mode == "정보 수정" and target_nm:
             row = sd.df[sd.df['이름'] == target_nm].iloc[0]
             sd["i_cat"], sd["i_nm"] = row['구분'], row['이름']
-            sd["i_la_val"], sd["i_lo_val"] = float(row['위도']), float(row['경도'])
+            sd["i_la_fixed"], sd["i_lo_fixed"] = float(row['위도']), float(row['경도'])
             for s in SL: sd[f"i_{s}"] = str(row[s])
+            sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]] # 지도를 해당 시설로 이동
         else:
             sd["i_cat"], sd["i_nm"] = "중계소", ""
-            sd["i_la_val"], sd["i_lo_val"] = float(sd.center[0]), float(sd.center[1])
             for s in SL: sd[f"i_{s}"] = ""
         sd.last_mode, sd.last_target = m_mode, target_nm
 
     cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     nm = st.text_input("시설 명칭", key="i_nm")
     
-    # 좌표 결정 우선순위: 1. 클릭/검색된 좌표(t_la) -> 2. 기존 데이터 좌표(i_la_val) -> 3. 기본 중심점
-    final_la = sd.t_la if sd.t_la is not None else sd.get("i_la_val", sd.center[0])
-    final_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_val", sd.center[1])
+    # 좌표 결정 우선순위: 1.지도클릭/검색(t_la) > 2.기존시설좌표 > 3.기본중심점
+    curr_la = sd.t_la if sd.t_la is not None else sd.get("i_la_fixed", sd.center[0])
+    curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
     
-    fla = st.number_input("위도", value=float(final_la), format="%.6f")
-    flo = st.number_input("경도", value=float(final_lo), format="%.6f")
+    fla = st.number_input("위도", value=float(curr_la), format="%.6f")
+    flo = st.number_input("경도", value=float(curr_lo), format="%.6f")
 
     st.write("📺 채널 (DTV | UHD)")
     for i in range(0, len(SL), 2):
@@ -165,16 +163,17 @@ for _, r in sd.df.iterrows():
         folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-# 임시 마커 고정 로직: t_la 값이 있으면 무조건 그립니다.
+# [중요] 새로 찍은 포인트(초록색)는 어떤 모드에서든 sd.t_la가 있으면 무조건 표시합니다.
 if sd.t_la is not None:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-crosshairs', prefix='fa')).add_to(m)
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
 res = st_folium(m, width="100%", height=800, key="map_v61")
 
-# 지도 클릭 시 좌표 갱신 (지도가 데이터를 보고할 때 t_la를 유지합니다)
+# 지도 클릭 시 좌표 갱신 (리셋 방지 로직 적용)
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
     if sd.t_la != la:
-        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
+        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]
+        st.rerun()
 
 st.dataframe(sd.df, use_container_width=True)
