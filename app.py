@@ -44,20 +44,19 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
-# [CSS 주입] 
-# 사이드바는 16px로 눈이 편안하게, 표 헤더는 18px로 중앙 정렬!
+# [CSS 주입] 표 헤더와 본문 텍스트의 중앙 정렬 강제 및 폰트 조절
 st.markdown("""
     <style>
-    /* 전체 앱 기본 폰트 (사이드바 포함) */
+    /* 앱 전체 기본 폰트 */
     html, body, [class*="css"] {
         font-size: 16px !important;
     }
-    /* 표 상단 제목(헤더) 중앙 정렬 및 크기 */
+    /* 표 헤더(제목) 중앙 정렬 강제 */
     th {
-        font-size: 18px !important;
         text-align: center !important;
+        font-size: 18px !important;
     }
-    /* 데이터프레임 셀 내용 정렬 보조 */
+    /* 데이터프레임 내부 텍스트 수직 중앙 정렬 */
     [data-testid="stDataFrame"] td {
         vertical-align: middle !important;
     }
@@ -70,7 +69,6 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ 지역 및 도구")
     
-    # 지역 필터
     regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
     new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
     
@@ -143,33 +141,28 @@ for _, r in disp_df.iterrows():
         folium.Marker(p, icon=folium.Icon(color=('red' if r['구분'] == '송신소' else 'blue'), icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=500, key=f"map_v86_{sd.map_key}")
+st_folium(m, width="100%", height=500, key=f"map_v87_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (스타일링 집중!)
+# [4] 하단: 데이터 관리 현황 (전체 중앙 정렬 및 폰트 대형화)
 # ---------------------------------------------------------
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
-# 1. 특정 컬럼(구분)만 중앙 정렬하는 설정
-config_dict = {
-    "구분": st.column_config.TextColumn("구분", alignment="center", width="small"),
-    "지역": st.column_config.TextColumn("지역", alignment="center"),
-    "이름": st.column_config.TextColumn("이름", alignment="center")
-}
+# [핵심 수정] 모든 컬럼을 강제로 중앙 정렬(center)로 설정
+config_dict = {col: st.column_config.Column(alignment="center") for col in CL}
 
-# 2. 행별 색상 및 채널 폰트 크기 지정 함수
+# 행별 색상 및 채널 폰트 크기 지정 함수
 def apply_custom_style(df):
     def style_logic(row):
-        # 송신소=적색, 중계소=청색 기본 설정
         text_color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
         styles = [text_color] * len(row)
         
-        # [수정포인트] 채널 컬럼만 폰트를 24px로 대폭 키움
+        # 채널 컬럼만 폰트를 24px로 키움
         large_font_style = text_color + " font-size: 24px; font-weight: bold;"
         
         for i, col_name in enumerate(df.columns):
-            if col_name in SL: # SL은 채널 리스트 (SBS, KBS1 등)
+            if col_name in SL:
                 styles[i] = large_font_style
         return styles
     
@@ -177,13 +170,14 @@ def apply_custom_style(df):
 
 styled_df = apply_custom_style(disp_df[CL])
 
+# 데이터프레임 출력
 event = st.dataframe(
     styled_df, 
     use_container_width=True, 
     on_select="rerun", 
     selection_mode="single-row", 
     hide_index=True, 
-    column_config=config_dict, 
+    column_config=config_dict, # 모든 컬럼 center 설정 적용
     key="main_table"
 )
 
