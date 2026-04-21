@@ -15,7 +15,6 @@ CL = ['구분','이름'] + SL + ['위도','경도','메모']
 sd = st.session_state
 if 'df' not in sd:
     try:
-        # 핵심 해결 1: CSV 데이터를 읽을 때 모든 칸을 '문자열(str)'로 강제 변환하여 데이터 충돌을 원천 차단합니다.
         sd.df = pd.read_csv(DB, dtype=str).fillna("")
         if '구분' not in sd.df.columns: sd.df.insert(0, '구분', '중계소')
         for c in CL:
@@ -27,6 +26,7 @@ if 'center' not in sd: sd.center = [35.1796, 129.0756]
 if 't_la' not in sd: sd.t_la = None
 if 't_lo' not in sd: sd.t_lo = None
 if 'layer' not in sd: sd.layer = "위성+도로"
+if 'last_edit_target' not in sd: sd.last_edit_target = None
 
 st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 
@@ -47,7 +47,7 @@ with st.sidebar:
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
         try:
-            l = Nominatim(user_agent="v55_mgr").geocode(sq)
+            l = Nominatim(user_agent="v56_mgr").geocode(sq)
             if l:
                 sd.t_la, sd.t_lo = l.latitude, l.longitude
                 sd.center = [l.latitude, l.longitude]
@@ -57,25 +57,32 @@ with st.sidebar:
     st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
     
-    edit_idx = None
     curr_data = {c: "" for c in CL}
-    curr_data['위도'], curr_data['경도'] = (sd.t_la if sd.t_la else sd.center[0]), (sd.t_lo if sd.t_lo else sd.center[1])
+    edit_idx = None
 
     if m_mode == "정보 수정" and not sd.df.empty:
         target_nm = st.selectbox("수정할 시설 선택", sd.df['이름'].tolist())
+        # 시설을 새로 선택하면 이전 클릭 좌표 초기화
+        if sd.last_edit_target != target_nm:
+            sd.t_la, sd.t_lo = None, None
+            sd.last_edit_target = target_nm
+            
         edit_idx = sd.df[sd.df['이름'] == target_nm].index[0]
         for c in CL: curr_data[c] = sd.df.at[edit_idx, c]
     
     cat = st.radio("구분", ["송신소", "중계소"], index=0 if curr_data['구분'] == "송신소" else 1, horizontal=True)
     nm = st.text_input("시설 명칭", value=str(curr_data['이름']))
     
-    # 텍스트로 저장된 좌표를 오류 없이 숫자로 다시 바꿔주는 안전 장치
-    def safe_float(val, default):
+    def safe_f(val, default):
         try: return float(val)
         except: return float(default)
-        
-    fla = st.number_input("위도", value=safe_float(curr_data['위도'], sd.center[0]), format="%.6f")
-    flo = st.number_input("경도", value=safe_float(curr_data['경도'], sd.center[1]), format="%.6f")
+
+    # [핵심 로직] 지도 클릭 좌표(t_la)가 있으면 그것을 먼저 보여주고, 없으면 기존 데이터를 보여줍니다.
+    v_la = sd.t_la if sd.t_la else safe_f(curr_data['위도'], sd.center[0])
+    v_lo = sd.t_lo if sd.t_lo else safe_f(curr_data['경도'], sd.center[1])
+    
+    fla = st.number_input("위도", value=float(v_la), format="%.6f")
+    flo = st.number_input("경도", value=float(v_lo), format="%.6f")
 
     chs = {}
     st.write("📺 채널 (DTV | UHD)")
@@ -86,7 +93,6 @@ with st.sidebar:
 
     if st.button("✅ 저장"):
         if nm:
-            # 핵심 해결 2: 좌표(fla, flo)도 텍스트(str)로 변환하여 표에 넣습니다. (에러 완벽 차단)
             v = [cat, nm] + [chs[s] for s in SL] + [str(fla), str(flo), ""]
             if m_mode == "정보 수정" and edit_idx is not None:
                 sd.df.loc[edit_idx] = v
@@ -109,9 +115,7 @@ ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "
      'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
 m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
-
-if my_p:
-    folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
 
 for _, r in sd.df.iterrows():
     try:
@@ -127,7 +131,7 @@ for _, r in sd.df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v55")
+res = st_folium(m, width="100%", height=800, key="map_v56")
 
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
