@@ -46,7 +46,7 @@ with st.sidebar:
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
         try:
-            l = Nominatim(user_agent="v53_mgr").geocode(sq)
+            l = Nominatim(user_agent="v54_mgr").geocode(sq)
             if l:
                 sd.t_la, sd.t_lo = l.latitude, l.longitude
                 sd.center = [l.latitude, l.longitude]
@@ -54,7 +54,6 @@ with st.sidebar:
         except: pass
 
     st.divider()
-    # 수정 기능 추가: [등록 / 수정] 모드 선택
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
     
     edit_idx = None
@@ -82,7 +81,9 @@ with st.sidebar:
         if nm:
             v = [cat, nm] + [chs[s] for s in SL] + [fla, flo, ""]
             if m_mode == "정보 수정" and edit_idx is not None:
-                sd.df.iloc[edit_idx] = v
+                # 에러 해결 핵심: 표를 한 줄 통째로 엎지 않고, 각 칸을 하나씩 안전하게 수정합니다.
+                for col_idx, col_name in enumerate(CL):
+                    sd.df.at[edit_idx, col_name] = v[col_idx]
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
@@ -121,12 +122,9 @@ for _, r in sd.df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v53")
+res = st_folium(m, width="100%", height=800, key="map_v54")
 
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
     if sd.t_la != la:
-        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]
-        st.rerun()
-
-st.dataframe(sd.df, use_container_width=True)
+        sd.t_la, sd.t_lo, sd
