@@ -2,115 +2,127 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from geopy.distance import geodesic
-import os, json
-from streamlit_js_eval import get_geolocation
+from geopy.geocoders import Nominatim
+import os
 
-# [1] 페이지 설정
-st.set_page_config(page_title="중계소 관리 PRO", layout="wide")
+# 1. 페이지 설정
+st.set_page_config(page_title="중계소 통합 관리 시스템", layout="wide")
 
 DB_FILE = 'stations.csv'
-ST_LIST = ['SBS', 'SBS(U)', 'KBS2', 'KBS2(U)', 'KBS1', 'KBS1(U)', 'EBS', 'EBS(U)', 'MBC', 'MBC(U)']
-COLS = ['이름'] + ST_LIST + ['위도', '경도', '메모']
+STATIONS = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 
-# [2] 데이터 로드 및 초기화
+# 데이터 로드 및 초기화
 if 'df' not in st.session_state:
     if os.path.exists(DB_FILE):
         try:
             st.session_state.df = pd.read_csv(DB_FILE)
-            for c in COLS:
-                if c not in st.session_state.df.columns: st.session_state.df[c] = ""
-        except: st.session_state.df = pd.DataFrame(columns=COLS)
-    else: st.session_state.df = pd.DataFrame(columns=COLS)
+        except:
+            st.session_state.df = pd.DataFrame(columns=['이름'] + STATIONS + ['위도', '경도', '메모'])
+    else:
+        st.session_state.df = pd.DataFrame(columns=['이름'] + STATIONS + ['위도', '경도', '메모'])
 
-if 'map_center' not in st.session_state: st.session_state.map_center = [35.1796, 129.0756]
-if 'temp_lat' not in st.session_state: st.session_state.temp_lat = None
-if 'temp_lon' not in st.session_state: st.session_state.temp_lon = None
+# 지도 중심 및 임시 좌표 상태 관리
+if 'map_center' not in st.session_state:
+    st.session_state.map_center = [35.1796, 129.0756] # 기본값: 부산시청
+if 'temp_lat' not in st.session_state:
+    st.session_state.temp_lat = None
+if 'temp_lon' not in st.session_state:
+    st.session_state.temp_lon = None
 
-# 상단 제목 (도움말 아이콘 방지를 위해 markdown 사용)
-st.markdown("## 📡 중계소 통합 관리 (클린 위성 모드)")
+# 주소 -> 좌표 변환 함수
+def geocode_address(address):
+    geolocator = Nominatim(user_agent="my_broadcast_manager")
+    try:
+        location = geolocator.geocode(address)
+        if location:
+            return (location.latitude, location.longitude)
+        return None
+    except:
+        return None
 
-# [3] 사이드바 도구
+st.title("📡 부산/울산 중계소 통합 관리 시스템")
+
+# 2. 사이드바 구성
 with st.sidebar:
-    st.markdown("### ⚙️ 현장 도구")
-    loc = get_geolocation()
-    my_pos = None
-    if loc and 'coords' in loc:
-        try:
-            my_pos = [loc['coords']['latitude'], loc['coords']['longitude']]
-            st.success("📍 GPS 연결 성공")
-            if st.button("🎯 내 위치로 이동"):
-                st.session_state.map_center = my_pos
-                st.rerun()
-        except: pass
-
+    st.header("📍 신규 지점 등록")
+    
+    # --- [추가된 주소 검색 기능] ---
+    search_addr = st.text_input("🏠 주소 검색 (예: 부산 남구 전포동)")
+    if st.button("주소로 위치 찾기"):
+        coords = geocode_address(search_addr)
+        if coords:
+            st.session_state.temp_lat, st.session_state.temp_lon = coords
+            st.session_state.map_center = [coords[0], coords[1]]
+            st.success("위치를 찾았습니다! 지도를 확인하세요.")
+            st.rerun()
+        else:
+            st.error("주소를 찾을 수 없습니다. 정확한 주소를 입력해 주세요.")
+    
     st.divider()
-    st.markdown("### 📍 새 중계소 등록")
-    name = st.text_input("중계소 명칭")
     
-    chs = {}
-    st.write("📺 채널 (DTV | UHD)")
-    for i in range(0, len(ST_LIST), 2):
-        c1, c2 = st.columns(2)
-        d_n, u_n = ST_LIST[i], ST_LIST[i+1]
-        chs[d_n] = c1.text_input(d_n, key=f"in_{d_n}")
-        chs[u_n] = c2.text_input(u_n, key=f"in_{u_n}")
+    # 등록 정보 입력
+    new_name = st.text_input("중계소 명칭")
+    st.write("📺 물리 채널")
+    ch_inputs = {}
+    col1, col2 = st.columns(2)
+    for i, s in enumerate(STATIONS):
+        if i % 2 == 0:
+            ch_inputs[s] = col1.text_input(s)
+        else:
+            ch_inputs[s] = col2.text_input(s)
+
+    # 검색된 좌표나 클릭한 좌표가 있으면 자동으로 채워짐
+    lat_val = st.session_state.temp_lat if st.session_state.temp_lat else st.session_state.map_center[0]
+    lon_val = st.session_state.temp_lon if st.session_state.temp_lon else st.session_state.map_center[1]
     
-    t_lat, t_lon = st.session_state.temp_lat, st.session_state.temp_lon
-    m_lat, m_lon = st.session_state.map_center[0], st.session_state.map_center[1]
-    flat = st.number_input("위도", value=float(t_lat if t_lat else m_lat), format="%.6f")
-    flon = st.number_input("경도", value=float(t_lon if t_lon else m_lon), format="%.6f")
-    
+    f_lat = st.number_input("위도", value=float(lat_val), format="%.6f")
+    f_lon = st.number_input("경도", value=float(lon_val), format="%.6f")
+    memo = st.text_area("메모/특이사항")
+
     if st.button("✅ 데이터 저장"):
-        if name:
-            new_v = [name] + [chs[s] for s in ST_LIST] + [flat, flon, ""]
-            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_v], columns=COLS)], ignore_index=True)
+        if new_name:
+            new_row = [new_name] + [ch_inputs[s] for s in STATIONS] + [f_lat, f_lon, memo]
+            st.session_state.df.loc[len(st.session_state.df)] = new_row
             st.session_state.df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
-            st.session_state.temp_lat = None
+            st.session_state.temp_lat = None # 좌표 초기화
+            st.success(f"{new_name} 저장 완료!")
             st.rerun()
 
-# [4] 메인 지도 영역 (레이어 정밀 설정)
+# 3. 메인 지도 영역
 m = folium.Map(location=st.session_state.map_center, zoom_start=14)
-
-# 1번 레이어: 전문가님 요청 - 산 이름/도로만 표시 (상업 마크 제외)
+# 위성 지도 설정
 folium.TileLayer(
-    tiles='https://mt1.google.com/vt/lyrs=s,h&hl=ko&x={x}&y={y}&z={z}',
-    attr='Google', name='1. 위성 + 산/도로명 (상점 제외)', overlay=False, control=True
+    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    attr='Google',
+    name='Google Satellite',
+    overlay=False,
+    control=True
 ).add_to(m)
 
-# 2번 레이어: 완전 깔끔한 위성 (글자 아예 없음)
-folium.TileLayer(
-    tiles='https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}',
-    attr='Google', name='2. 순수 위성 (가장 깔끔)', overlay=False, control=True
-).add_to(m)
+# 기존 마커 표시
+for index, row in st.session_state.df.iterrows():
+    folium.Marker(
+        [row['위도'], row['경도']],
+        popup=f"<b>{row['이름']}</b><br>메모: {row['메모']}",
+        tooltip=row['이름']
+    ).add_to(m)
 
-folium.LayerControl(position='topright').add_to(m)
-
-# 마커 표시
-if my_pos:
-    folium.Marker(my_pos, icon=folium.Icon(color='orange', icon='person', prefix='fa')).add_to(m)
-
-for _, r in st.session_state.df.iterrows():
-    try:
-        p = [float(r['위도']), float(r['경도'])]
-        dist = f"<br>📏 거리: {round(geodesic(my_pos, p).km, 2)}km" if my_pos else ""
-        dtv = " | ".join([f"{s}:{r[s]}" for s in ST_LIST if "(U)" not in s and str(r[s]).strip() != ""])
-        uhd = " | ".join([f"{s}:{r[s]}" for s in ST_LIST if "(U)" in s and str(r[s]).strip() != ""])
-        pop = f"<b>{r['이름']}</b><br><b>[DTV]</b> {dtv}<br><b>[UHD]</b> {uhd}{dist}"
-        folium.Marker(p, popup=folium.Popup(pop, max_width=300), icon=folium.Icon(color='red', icon='tower-broadcast', prefix='fa')).add_to(m)
-    except: continue
-
+# 검색하거나 클릭한 위치에 임시 마커 표시
 if st.session_state.temp_lat:
-    folium.Marker([st.session_state.temp_lat, st.session_state.temp_lon], icon=folium.Icon(color='green')).add_to(m)
+    folium.Marker(
+        [st.session_state.temp_lat, st.session_state.temp_lon],
+        icon=folium.Icon(color='red', icon='info-sign'),
+        tooltip="검색된 위치"
+    ).add_to(m)
 
-# 지도 출력 및 클릭 감지
-output = st_folium(m, width="100%", height=500, key="broadcast_v4_final")
+# 지도 클릭 시 좌표 획득 기능
+map_data = st_folium(m, width=1000, height=600)
 
-if output and output.get('last_clicked'):
-    clat, clon = round(output['last_clicked']['lat'], 6), round(output['last_clicked']['lng'], 6)
-    if st.session_state.temp_lat != clat:
-        st.session_state.temp_lat, st.session_state.temp_lon = clat, clon
-        st.rerun()
+if map_data['last_clicked']:
+    st.session_state.temp_lat = map_data['last_clicked']['lat']
+    st.session_state.temp_lon = map_data['last_clicked']['lng']
+    st.rerun()
 
-st.markdown("### 📋 중계소 목록")
+# 4. 하단 데이터 표
+st.subheader("📋 전체 중계소 목록")
 st.dataframe(st.session_state.df, use_container_width=True)
