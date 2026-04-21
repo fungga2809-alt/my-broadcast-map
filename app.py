@@ -17,7 +17,7 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '메모']
 
 sd = st.session_state
 
-# [1] 데이터 로드 로직
+# [1] 데이터 로드
 def load_data():
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
@@ -51,7 +51,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v70 디자인 + 표와 연동되는 지능형 입력창
+# [2] 사이드바: v70 디자인 + 지도/표 연동 로직
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -63,45 +63,49 @@ with st.sidebar:
     # 주소 검색
     st.subheader("🔍 주소/지명 검색")
     search_addr = st.text_input("검색할 주소 또는 건물명", key="addr_input")
-    if st.button("📍 위치 검색 및 좌표 설정"):
+    if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v94")
+                geolocator = Nominatim(user_agent="broadcasting_master_v95")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
                     sd.t_la, sd.t_lo = location.latitude, location.longitude
-                    sd.map_key += 1
-                    st.rerun()
+                    sd.m_mode = "새로 등록" # 검색 시 새로 등록 모드로
+                    sd.map_key += 1; st.rerun()
             except: st.error("검색 오류")
 
     c1, c2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     if c1.button("🎯 내 위치"):
-        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]; sd.map_key += 1; st.rerun()
+        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]; sd.m_mode = "새로 등록"; sd.map_key += 1; st.rerun()
     if c2.button("↩️ 되돌리기"):
         if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
 
-    # [핵심] 모드 설정 (표 클릭 시 자동으로 바뀌도록 index 조절)
-    mode_options = ["새로 등록", "정보 수정"]
-    sd.m_mode = st.radio("📍 모드 설정", mode_options, index=mode_options.index(sd.m_mode), horizontal=True)
+    # 모드 설정
+    prev_mode = sd.m_mode
+    sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
     
+    # 모드가 수동으로 바뀌었을 때 초기화 로직
+    if prev_mode != sd.m_mode and sd.m_mode == "새로 등록":
+        sd.target_nm = None
+        sd.t_la, sd.t_lo = None, None
+        for s in SL: sd[f"ch_{s}"] = ""
+
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
     
-    # [핵심] 수정 대상 선택 (표 클릭 시 해당 이름이 자동으로 선택됨)
-    target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
-    sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx) if sd.m_mode == "정보 수정" and names else None
-    
-    # 데이터 매핑 (수정 모드일 때 입력창 채우기)
-    if sd.m_mode == "정보 수정" and sd.target_nm:
+    # 수정 대상 선택
+    if sd.m_mode == "정보 수정" and names:
+        target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
+        sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx)
+        
         row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
         i_reg, i_cat, i_nm = row['지역'], row['구분'], row['이름']
         la_v, lo_v = float(row['위도']), float(row['경도'])
-        # 세션 값에 채널 정보 강제 주입
         for s in SL: sd[f"ch_{s}"] = str(row[s])
     else:
         i_reg, i_cat, i_nm = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시", "중계소", ""
@@ -111,35 +115,33 @@ with st.sidebar:
     new_reg = st.text_input("지역", value=i_reg)
     new_cat = st.radio("구분", ["송신소", "중계소"], index=0 if i_cat=="송신소" else 1, horizontal=True)
     new_nm = st.text_input("시설 명칭", value=i_nm)
-    new_la = st.number_input("위도", value=float(la_v), format="%.6f")
-    new_lo = st.number_input("경도", value=float(lo_v), format="%.6f")
+    final_la = st.number_input("위도", value=float(la_v), format="%.6f")
+    final_lo = st.number_input("경도", value=float(lo_v), format="%.6f")
 
     st.subheader("📺 물리 채널 정보")
     st.info("📡 **DTV 채널**")
     dtv_cols = st.columns(3)
-    for i, s in enumerate(SL_DTV): dtv_cols[i%3].text_input(s, key=f"ch_{s}")
+    for i, s in enumerate(SL_DTV):
+        st.session_state[f"ch_{s}"] = dtv_cols[i%3].text_input(s, value=sd[f"ch_{s}"], key=f"inp_{s}")
         
     st.warning("✨ **UHD 채널**")
     uhd_cols = st.columns(3)
-    for i, s in enumerate(SL_UHD): uhd_cols[i%3].text_input(s, key=f"uhd_input_{s}", value=sd[f"ch_{s}"], on_change=lambda s=s: sd.update({f"ch_{s}": st.session_state[f"uhd_input_{s}"]}))
-    # UHD 입력을 위해 위 방식 대신 간단하게 세션 연동 처리
-    for s in SL_UHD: 
-        # UHD는 별도 루프로 UI 생성 (v70 방식 유지)
-        pass 
-    # 위 루프 대신 실제 구현은 아래와 같이 함
-    
+    for i, s in enumerate(SL_UHD):
+        st.session_state[f"ch_{s}"] = uhd_cols[i%3].text_input(s, value=sd[f"ch_{s}"], key=f"inp_{s}")
+
     if st.button("✅ 데이터 저장"):
         if new_nm:
             sd.history.append(sd.df.copy())
-            v = [new_reg, new_cat, new_nm] + [sd[f"ch_{s}"] for s in SL] + [str(new_la), str(new_lo), ""]
+            ch_vals = [st.session_state[f"ch_{s}"] for s in SL]
+            v = [new_reg, new_cat, new_nm] + ch_vals + [str(final_la), str(final_lo), ""]
             if sd.m_mode == "정보 수정" and sd.target_nm:
                 idx = sd.df[sd.df['이름'] == sd.target_nm].index[0]
                 sd.df.loc[idx] = v
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo, sd.target_nm = None, None, None
-            st.rerun()
+            sd.t_la, sd.t_lo, sd.target_nm, sd.m_mode = None, None, None, "새로 등록"
+            st.success("저장 완료!"); st.rerun()
 
     st.divider()
     del_target = st.selectbox("삭제 시설 선택", ["선택 안 함"] + sd.df['이름'].tolist())
@@ -153,7 +155,8 @@ with st.sidebar:
 # [3] 본문: 지도 및 데이터 표 (v82 스타일 + 연동 로직)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
-disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
+
+# 지도 생성 및 클릭 이벤트 캡처
 m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
@@ -163,7 +166,22 @@ for _, r in disp_df.iterrows():
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=500, key=f"map_v_final_{sd.map_key}")
+if sd.t_la and sd.m_mode == "새로 등록":
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='plus')).add_to(m)
+
+# 지도 출력 및 클릭 데이터 받기
+map_data = st_folium(m, width="100%", height=500, key=f"map_v95_{sd.map_key}")
+
+# [핵심] 지도 클릭 시 좌표 획득 및 새로 등록 모드 전환
+if map_data.get("last_clicked"):
+    clicked_la = map_data["last_clicked"]["lat"]
+    clicked_lo = map_data["last_clicked"]["lng"]
+    if sd.t_la != clicked_la: # 중복 방지
+        sd.t_la, sd.t_lo = clicked_la, clicked_lo
+        sd.m_mode = "새로 등록"
+        sd.target_nm = None
+        for s in SL: sd[f"ch_{s}"] = "" # 새 등록을 위해 채널 비움
+        st.rerun()
 
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
@@ -177,22 +195,14 @@ styled_df = disp_df[CL].style.apply(style_row, axis=1)
 
 event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, column_config=cfg, key="main_table")
 
-# [핵심] 표 클릭 시 사이드바 정보 업데이트
+# 표 클릭 시 수정 모드 전환
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
-    
-    # 1. 지도 이동 및 마커 갱신
-    sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
-    sd.map_key += 1
-    
-    # 2. 사이드바 모드를 '정보 수정'으로 변경
-    sd.m_mode = "정보 수정"
-    
-    # 3. 수정 대상을 클릭한 시설의 이름으로 변경
-    sd.target_nm = sel_row['이름']
-    
-    # 4. 즉시 새로고침하여 사이드바에 반영
-    st.rerun()
+    if sd.target_nm != sel_row['이름']:
+        sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
+        sd.m_mode = "정보 수정"
+        sd.target_nm = sel_row['이름']
+        sd.map_key += 1; st.rerun()
 
 st.download_button(label="📥 전체 데이터 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
