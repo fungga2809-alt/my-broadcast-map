@@ -15,7 +15,6 @@ CL = ['구분','이름'] + SL + ['위도','경도','메모']
 
 sd = st.session_state
 
-# [1] 데이터 로드
 if 'df' not in sd:
     try:
         sd.df = pd.read_csv(DB, dtype=str).fillna("")
@@ -52,17 +51,14 @@ def parse_dms(dms_str):
 
 st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 
-# [2] 사이드바 도구
 with st.sidebar:
     st.header("⚙️ 도구")
-    
     t_c1, t_c2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     
     if t_c1.button("🎯 내 위치로"):
         if my_p: sd.center, sd.t_la, sd.t_lo = my_p, None, None; st.rerun()
-        
     if t_c2.button("↩️ 되돌리기"):
         if sd.history:
             sd.df = sd.history.pop()
@@ -77,36 +73,28 @@ with st.sidebar:
     if st.button("🔍 찾기"):
         d_la, d_lo = parse_dms(sq)
         if d_la and d_lo:
-            sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]
-            st.rerun()
+            sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]; st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v62_mgr").geocode(sq)
+                l = Nominatim(user_agent="v63_mgr").geocode(sq)
                 if l:
-                    sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
-                    st.rerun()
+                    sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]; st.rerun()
             except: st.error("검색 결과가 없습니다.")
 
     st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
-    
     target_nm = None
     if m_mode == "정보 수정" and not sd.df.empty:
         target_nm = st.selectbox("수정할 시설 선택", sd.df['이름'].tolist())
         
-    # [핵심 로직] 모드 전환이나 시설 선택 시 검색 결과(t_la)가 있다면 초기화하지 않습니다!
     if sd.last_mode != m_mode or sd.last_target != target_nm:
         if m_mode == "정보 수정" and target_nm:
             row = sd.df[sd.df['이름'] == target_nm].iloc[0]
             sd["i_cat"], sd["i_nm"] = row['구분'], row['이름']
             sd["i_la_fixed"], sd["i_lo_fixed"] = float(row['위도']), float(row['경도'])
             for s in SL: sd[f"i_{s}"] = str(row[s])
-            
-            # 검색 결과가 없을 때만 해당 시설 위치로 지도를 강제 이동시킵니다.
-            if sd.t_la is None:
-                sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]]
+            if sd.t_la is None: sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]]
         else:
-            # 검색 결과가 없을 때만 새로 등록 필드 초기화
             if sd.t_la is None:
                 sd["i_cat"], sd["i_nm"] = "중계소", ""
                 for s in SL: sd[f"i_{s}"] = ""
@@ -114,13 +102,9 @@ with st.sidebar:
 
     cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     nm = st.text_input("시설 명칭", key="i_nm")
-    
-    # 좌표 우선순위: 검색된 좌표(t_la) > 시설 원본 좌표(fixed) > 기본 중심점
     curr_la = sd.t_la if sd.t_la is not None else sd.get("i_la_fixed", sd.center[0])
     curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
-    
-    fla = st.number_input("위도", value=float(curr_la), format="%.6f")
-    flo = st.number_input("경도", value=float(curr_lo), format="%.6f")
+    fla, flo = st.number_input("위도", value=float(curr_la), format="%.6f"), st.number_input("경도", value=float(curr_lo), format="%.6f")
 
     st.write("📺 채널 (DTV | UHD)")
     for i in range(0, len(SL), 2):
@@ -138,17 +122,9 @@ with st.sidebar:
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            # 저장 후에는 검색 결과 클리어
             sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
 
-    if not sd.df.empty:
-        st.divider()
-        del_tg = st.selectbox("삭제", sd.df['이름'].tolist(), key="del_box")
-        if st.button("🚨 삭제"):
-            save_history(); sd.df = sd.df[sd.df['이름'] != del_tg]
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
-
-# [3] 지도 출력
+# 지도 및 마커 출력 (기존과 동일)
 ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위성+도로" else \
      'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
      'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
@@ -159,21 +135,32 @@ if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).ad
 for _, r in sd.df.iterrows():
     try:
         p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
         dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
         uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d}"
+        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}"
         folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-if sd.t_la is not None:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
+if sd.t_la: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v62")
-
+res = st_folium(m, width="100%", height=800, key="map_v63")
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
-    if sd.t_la != la:
-        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
+    if sd.t_la != la: sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
+
+# [중요] 하단 데이터 관리 및 내보내기 도구
+st.divider()
+c1, c2 = st.columns([8, 2])
+c1.subheader("📊 데이터 관리 현황")
+
+# 엑셀 파일 형태로 다운로드할 수 있게 변환
+csv_data = sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+c2.download_button(
+    label="📥 최신 CSV 받기",
+    data=csv_data,
+    file_name='stations.csv',
+    mime='text/csv',
+    help="수정된 데이터를 다운로드하여 깃허브에 업로드하세요."
+)
 
 st.dataframe(sd.df, use_container_width=True)
