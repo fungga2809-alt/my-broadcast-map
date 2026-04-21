@@ -114,4 +114,19 @@ for _, r in sd.df.iterrows():
         d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
         dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
         uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        txt = f"<b>[{r['구분']
+        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d}"
+        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
+    except: pass
+
+if sd.t_la:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
+
+res = st_folium(m, width="100%", height=800, key="map_v53")
+
+if res and res.get('last_clicked'):
+    la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
+    if sd.t_la != la:
+        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]
+        st.rerun()
+
+st.dataframe(sd.df, use_container_width=True)
