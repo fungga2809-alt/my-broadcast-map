@@ -4,7 +4,7 @@ import folium
 from streamlit_folium import st_folium
 import os
 from streamlit_js_eval import get_geolocation
-from geopy.geocoders import Nominatim # 주소 검색 엔진
+from geopy.geocoders import Nominatim
 
 # [설정] 페이지 레이아웃 및 제목
 st.set_page_config(page_title="Broadcasting Infrastructure Master", layout="wide")
@@ -29,13 +29,17 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# 세션 상태 초기화
+# 세션 상태 초기화 (입력값 보존용)
 defaults = {'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
-            'history': [], 'map_key': 0, 'sel_reg': "전체"}
+            'history': [], 'map_key': 0, 'sel_reg': "전체", 'last_target': None}
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 
-# [CSS] v82 스타일의 대형 폰트 및 UI 정돈
+# 채널 입력값 세션 초기화
+for s in SL:
+    if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
+
+# [CSS] v82 스타일 대형 폰트 및 UI 정돈
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -45,7 +49,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v70 디자인 + 주소 검색 기능 추가
+# [2] 사이드바: v70 디자인 + 검색 기능 + 데이터 보존
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -54,26 +58,24 @@ with st.sidebar:
     regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
     sd.sel_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
 
-    # [핵심] 주소 및 지명 검색 기능 (복구)
+    # 주소 검색 (데이터 보존형)
     st.subheader("🔍 주소/지명 검색")
-    search_addr = st.text_input("검색할 주소 또는 건물명", placeholder="예: 부산시청, 해운대구...")
+    search_addr = st.text_input("검색할 주소 또는 건물명", key="addr_input")
     if st.button("📍 위치 검색 및 좌표 설정"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master")
+                geolocator = Nominatim(user_agent="broadcasting_master_v93")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
                     sd.t_la, sd.t_lo = location.latitude, location.longitude
                     sd.map_key += 1
-                    st.success(f"위치 확인: {location.address}")
+                    st.success("위치 검색 성공!")
                     st.rerun()
-                else:
-                    st.error("검색 결과가 없습니다.")
-            except:
-                st.error("검색 엔진 오류가 발생했습니다.")
+                else: st.error("결과가 없습니다.")
+            except: st.error("엔진 오류")
 
-    # 제어 버튼 (내 위치 / 되돌리기)
+    # 제어 버튼
     c1, c2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
@@ -89,53 +91,58 @@ with st.sidebar:
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     target_nm = st.selectbox("관리 대상 선택", f_df['이름'].tolist()) if m_mode == "정보 수정" and not f_df.empty else None
     
-    # 데이터 매핑 (검색된 좌표가 있으면 우선 적용)
-    if m_mode == "정보 수정" and target_nm:
+    # [수정 모드] 선택 시 데이터 불러오기
+    if m_mode == "정보 수정" and target_nm and sd.last_target != target_nm:
         row = sd.df[sd.df['이름'] == target_nm].iloc[0]
-        i_reg, i_cat, i_nm = row['지역'], row['구분'], row['이름']
-        la_v, lo_v = float(row['위도']), float(row['경도'])
-        cur_vals = {s: str(row[s]) for s in SL}
-    else:
-        i_reg, i_cat, i_nm = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시", "중계소", ""
-        la_v, lo_v = sd.t_la if sd.t_la else sd.center[0], sd.t_lo if sd.t_lo else sd.center[1]
-        cur_vals = {s: "" for s in SL}
+        sd["v_reg"], sd["v_cat"], sd["v_nm"] = row['지역'], row['구분'], row['이름']
+        sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
+        for s in SL: sd[f"ch_{s}"] = str(row[s])
+        sd.last_target = target_nm
+    elif m_mode == "새로 등록" and sd.last_target != "NEW":
+        sd["v_reg"], sd["v_cat"], sd["v_nm"] = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시", "중계소", ""
+        for s in SL: sd[f"ch_{s}"] = ""
+        sd.last_target = "NEW"
 
     # 시설 정보 입력
-    new_reg = st.text_input("지역", value=i_reg)
-    new_cat = st.radio("구분", ["송신소", "중계소"], index=0 if i_cat=="송신소" else 1, horizontal=True)
-    new_nm = st.text_input("시설 명칭", value=i_nm)
-    new_la = st.number_input("위도", value=float(la_v), format="%.6f")
-    new_lo = st.number_input("경도", value=float(lo_v), format="%.6f")
+    new_reg = st.text_input("지역", key="v_reg")
+    new_cat = st.radio("구분", ["송신소", "중계소"], key="v_cat", horizontal=True)
+    new_nm = st.text_input("시설 명칭", key="v_nm")
+    la_val = st.number_input("위도", value=float(sd.t_la if sd.t_la else sd.center[0]), format="%.6f")
+    lo_val = st.number_input("경도", value=float(sd.t_lo if sd.t_lo else sd.center[1]), format="%.6f")
 
-    # 채널 정보 그룹화 입력
-    st.subheader("📺 채널 정보 (그룹화)")
-    new_ch_vals = {}
-    st.info("📡 **DTV 채널 (디지털)**")
+    # 채널 정보 (DTV/UHD 그룹화)
+    st.subheader("📺 물리 채널 정보")
+    st.info("📡 **DTV 채널**")
     dtv_cols = st.columns(3)
     for i, s in enumerate(SL_DTV):
-        new_ch_vals[s] = dtv_cols[i%3].text_input(s, value=cur_vals[s], key=f"dtv_{s}")
+        dtv_cols[i%3].text_input(s, key=f"ch_{s}")
         
     st.warning("✨ **UHD 채널**")
     uhd_cols = st.columns(3)
     for i, s in enumerate(SL_UHD):
-        new_ch_vals[s] = uhd_cols[i%3].text_input(s, value=cur_vals[s], key=f"uhd_{s}")
+        uhd_cols[i%3].text_input(s, key=f"ch_{s}")
 
     if st.button("✅ 데이터 저장"):
         if new_nm:
             sd.history.append(sd.df.copy())
-            v = [new_reg, new_cat, new_nm] + [new_ch_vals[s] for s in SL] + [str(new_la), str(new_lo), ""]
+            # 채널 데이터 수집
+            ch_data = [sd[f"ch_{s}"] for s in SL]
+            v = [new_reg, new_cat, new_nm] + ch_data + [str(la_val), str(lo_val), ""]
+            
             if m_mode == "정보 수정" and target_nm:
-                idx = sd.df[sd.df['이름'] == target_nm].index[0]; sd.df.loc[idx] = v
+                idx = sd.df[sd.df['이름'] == target_nm].index[0]
+                sd.df.loc[idx] = v
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+            
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo = None, None # 저장 후 임시 좌표 초기화
+            sd.t_la, sd.t_lo = None, None
+            st.success("저장 완료!")
             st.rerun()
 
-    # 시설 삭제 섹션
+    # 시설 삭제
     st.divider()
-    st.subheader("🗑️ 시설 삭제")
-    del_target = st.selectbox("삭제 시설 선택", ["선택 안 함"] + sd.df['이름'].tolist(), key="del_select")
+    del_target = st.selectbox("삭제 시설 선택", ["선택 안 함"] + sd.df['이름'].tolist(), key="del_box")
     if st.button("🚨 시설 삭제"):
         if del_target != "선택 안 함":
             sd.history.append(sd.df.copy())
@@ -157,7 +164,7 @@ for _, r in disp_df.iterrows():
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-if sd.t_la: # 검색된 좌표 마커 표시
+if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='search')).add_to(m)
 
 st_folium(m, width="100%", height=500, key=f"map_v_final_{sd.map_key}")
