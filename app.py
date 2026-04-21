@@ -66,7 +66,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v99")
+                geolocator = Nominatim(user_agent="broadcasting_master_v100")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
@@ -90,7 +90,7 @@ with st.sidebar:
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
     
-    # [데이터 로딩 로직] 수정 또는 새 등록 시 값 세팅
+    # 데이터 로딩 로직
     if sd.m_mode == "정보 수정" and names:
         target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
         sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx)
@@ -104,7 +104,7 @@ with st.sidebar:
     else:
         if sd.last_loaded_nm != "NEW":
             sd["v_reg"], sd["v_cat"], sd["v_nm"] = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시", "중계소", ""
-            for s in SL: sd[f"ch_{s}"] = "" # 입력창 비우기
+            for s in SL: sd[f"ch_{s}"] = "" 
             sd.last_loaded_nm = "NEW"
 
     # 기본 정보 입력
@@ -131,16 +131,12 @@ with st.sidebar:
         if sd["v_nm"]:
             sd.history.append(sd.df.copy())
             v = [sd["v_reg"], sd["v_cat"], sd["v_nm"]] + [sd[f"ch_{s}"] for s in SL] + [str(sd.t_la), str(sd.t_lo), ""]
-            
             if sd.m_mode == "정보 수정" and sd.target_nm:
                 idx = sd.df[sd.df['이름'] == sd.target_nm].index[0]
                 sd.df.loc[idx] = v
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            
-            # [오류 해결 포인트] 저장 후 직접 값을 비우지 않고, 트리거만 초기화하여 다음 실행 때 비워지게 함
             sd.t_la, sd.t_lo, sd.target_nm, sd.last_loaded_nm = None, None, None, None
             st.success("저장 완료!"); st.rerun()
 
@@ -153,26 +149,44 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도 및 데이터 관리 (v82 스타일)
+# [3] 본문: 지도 및 데이터 관리
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 
-# 필터링된 데이터 정의
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
+# [수정] 지도 높이 확대 (height=700)
 m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        folium.Marker(p, icon=folium.DivIcon(html=f'<div style="font-size: 11pt; color: {color}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; border: 1px solid {color}; white-space: nowrap;">{r["이름"]}</div>')).add_to(m)
+        
+        # [수정] 지도 라벨 디자인: 글씨 작게(9pt), 흰색 바탕
+        label_html = f'''
+            <div style="
+                font-size: 9pt; 
+                color: {color}; 
+                font-weight: bold; 
+                background-color: white; 
+                padding: 2px 4px; 
+                border: 1px solid {color}; 
+                border-radius: 3px; 
+                white-space: nowrap;
+                box-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+            ">
+                {r["이름"]}
+            </div>
+        '''
+        folium.Marker(p, icon=folium.DivIcon(html=label_html)).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=500, key=f"map_v99_{sd.map_key}")
+# [수정] st_folium 높이 반영
+map_data = st_folium(m, width="100%", height=700, key=f"map_v100_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
