@@ -45,7 +45,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v43_mgr")
+        g = Nominatim(user_agent="v44_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -83,47 +83,18 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [3] 지도 설정 (기본 레이어를 위성+도로로 고정)
-# tiles=None으로 설정하여 기본 지도가 뜨지 않게 합니다.
-m = folium.Map(location=sd.center, zoom_start=14, tiles=None)
+# [3] 지도 설정 (핵심 수정 부분)
+ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' # 위성 + 도로
+ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' # 순수 위성
+ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}' # 일반 지도
 
-# 구글 레이어 주소
-ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' # 위성 + 도로 (Hybrid)
-ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' # 순수 위성 (Satellite)
-ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}' # 일반 지도 (Roadmap)
+# 지도를 생성할 때 tiles 인자에 '위성+도로' 주소를 바로 넣어서 기본값으로 고정합니다.
+m = folium.Map(location=sd.center, zoom_start=14, tiles=ly_y, attr='Google')
 
-# 첫 번째로 추가되는 레이어가 기본값이 됩니다.
-folium.TileLayer(tiles=ly_y, attr='G', name='위성 + 도로', overlay=False).add_to(m)
-folium.TileLayer(tiles=ly_s, attr='G', name='순수 위성', overlay=False).add_to(m)
-folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도', overlay=False).add_to(m)
+# 추가 선택 옵션들 (LayerControl용)
+folium.TileLayer(tiles=ly_s, attr='Google', name='순수 위성', overlay=False).add_to(m)
+folium.TileLayer(tiles=ly_m, attr='Google', name='일반 지도', overlay=False).add_to(m)
 folium.LayerControl().add_to(m)
 
 if my_p:
-    folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
-
-for _, r in sd.df.iterrows():
-    try:
-        p = [float(r['위도']), float(r['경도'])]
-        clr = 'red' if r['구분'] == '송신소' else 'blue'
-        d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
-        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
-        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d}"
-        folium.Marker(p, popup=folium.Popup(txt, max_width=300), 
-                      icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
-    except: pass
-
-if sd.t_la:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
-
-# 800px 높이 출력
-res = st_folium(m, width="100%", height=800, key="map_v43")
-
-if res and res.get('last_clicked'):
-    lc = res['last_clicked']
-    la, lo = round(lc['lat'], 6), round(lc['lng'], 6)
-    if sd.t_la != la:
-        sd.t_la, sd.t_lo = la, lo
-        st.rerun()
-
-st.dataframe(sd.df, use_container_width=True)
+    folium.Marker(my_p, icon
