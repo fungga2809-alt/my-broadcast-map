@@ -46,7 +46,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v46_mgr")
+        g = Nominatim(user_agent="v47_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -86,14 +86,20 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [3] 지도 설정 (위성+도로 고정)
+# [3] 지도 레이어 완벽 고정
+# tiles=None 으로 기본 지도를 아예 삭제합니다!
+m = folium.Map(location=sd.center, zoom_start=14, tiles=None)
+
 ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}'
 ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
-m = folium.Map(location=sd.center, zoom_start=14, tiles=ly_y, attr='G')
-folium.TileLayer(tiles=ly_s, attr='G', name='순수 위성', overlay=False).add_to(m)
-folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도', overlay=False).add_to(m)
+# 첫 번째로 등록하는 레이어가 무조건 영구적인 '기본 화면'이 됩니다.
+folium.TileLayer(tiles=ly_y, attr='G', name='위성+도로').add_to(m)
+folium.TileLayer(tiles=ly_s, attr='G', name='순수 위성').add_to(m)
+folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도').add_to(m)
+
+# 레이어 컨트롤 활성화
 folium.LayerControl().add_to(m)
 
 if my_p:
@@ -111,7 +117,6 @@ for _, r in sd.df.iterrows():
         dt = " | ".join([str(s)+":"+str(r[s]) for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
         uh = " | ".join([str(s)+":"+str(r[s]) for s in SL if "(U)" in s and str(r[s]).strip() != ""])
         
-        # 필터링 에러를 막기 위해 특수문자 조합 방식을 평범하게 변경함
         p1 = "<b>[" + str(r['구분']) + "] " + str(r['이름']) + "</b><br>"
         p2 = "DTV: " + dt + "<br>UHD: " + uh + d
         txt = p1 + p2
@@ -124,8 +129,7 @@ for _, r in sd.df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-# 800px 사이즈
-res = st_folium(m, width="100%", height=800, key="map_v46")
+res = st_folium(m, width="100%", height=800, key="map_v47")
 
 if res and res.get('last_clicked'):
     lc = res['last_clicked']
