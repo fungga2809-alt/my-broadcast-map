@@ -11,21 +11,22 @@ from geopy.geocoders import Nominatim
 st.set_page_config(page_title="Broadcasting Master", layout="wide")
 DB = 'stations.csv'
 
-# [변경] 채널 리스트를 그룹 단위로 재정의합니다.
+# [핵심] 채널 그룹화 정의 (DTV 끼리, UHD 끼리)
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
+# 도표에 표시될 최종 순서 고정
 CL = ['구분','이름'] + SL + ['위도','경도','메모']
 
 sd = st.session_state
 
-# [1] 데이터 로드
+# [1] 데이터 로드 및 컬럼 순서 강제 재배치
 if 'df' not in sd:
     try:
-        sd.df = pd.read_csv(DB, dtype=str).fillna("")
+        temp_df = pd.read_csv(DB, dtype=str).fillna("")
+        # 기존 파일에 컬럼이 섞여 있어도 CL 순서대로 다시 정렬합니다.
+        sd.df = temp_df.reindex(columns=CL, fill_value="")
         if '구분' not in sd.df.columns: sd.df.insert(0, '구분', '중계소')
-        for c in CL:
-            if c not in sd.df.columns: sd.df[c] = ""
     except:
         sd.df = pd.DataFrame(columns=CL, dtype=str)
 
@@ -60,17 +61,14 @@ st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 # [2] 사이드바 도구
 with st.sidebar:
     st.header("⚙️ 도구")
-    
     btn_col1, btn_col2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     
     if btn_col1.button("🎯 내 위치"):
         if my_p:
-            sd.center = my_p
-            sd.t_la, sd.t_lo = my_p[0], my_p[1]
+            sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]
             st.rerun()
-        else: st.error("GPS 권한을 확인해주세요.")
         
     if btn_col2.button("↩️ 되돌리기"):
         if sd.history:
@@ -89,7 +87,7 @@ with st.sidebar:
             sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]; st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v66_mgr").geocode(sq)
+                l = Nominatim(user_agent="v67_mgr").geocode(sq)
                 if l:
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]; st.rerun()
             except: st.error("검색 결과가 없습니다.")
@@ -119,20 +117,17 @@ with st.sidebar:
     
     curr_la = sd.t_la if sd.t_la is not None else sd.get("i_la_fixed", sd.center[0])
     curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
-    
     fla, flo = st.number_input("위도", value=float(curr_la), format="%.6f"), st.number_input("경도", value=float(curr_lo), format="%.6f")
 
-    # [수정] 채널 입력 UI 그룹화
+    # 입력 UI (DTV/UHD 그룹화)
     st.divider()
     st.write("📺 **DTV 채널 (디지털)**")
     dtv_cols = st.columns(3)
-    for idx, s in enumerate(SL_DTV):
-        dtv_cols[idx % 3].text_input(s, key=f"i_{s}")
+    for idx, s in enumerate(SL_DTV): dtv_cols[idx % 3].text_input(s, key=f"i_{s}")
 
     st.write("✨ **UHD 채널**")
     uhd_cols = st.columns(3)
-    for idx, s in enumerate(SL_UHD):
-        uhd_cols[idx % 3].text_input(s, key=f"i_{s}")
+    for idx, s in enumerate(SL_UHD): uhd_cols[idx % 3].text_input(s, key=f"i_{s}")
 
     if st.button("✅ 저장"):
         if nm:
@@ -154,7 +149,7 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
 # [3] 지도 출력
-ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위 satellite" else \
+ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위성+도로" else \
      'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
      'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
@@ -173,17 +168,18 @@ for _, r in sd.df.iterrows():
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v66")
-
+res = st_folium(m, width="100%", height=800, key="map_v67")
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
-    if sd.t_la != la:
-        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
+    if sd.t_la != la: sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
 
-# [4] 하단 데이터 관리 및 내보내기
+# [4] 하단 데이터 관리 (컬럼 순서 강제 고정 표시)
 st.divider()
 c1, c2 = st.columns([8, 2])
 c1.subheader("📊 데이터 관리 현황")
-csv_data = sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+# 다운로드 파일도 CL 순서대로 저장되도록 합니다.
+csv_data = sd.df[CL].to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 c2.download_button(label="📥 최신 CSV 받기", data=csv_data, file_name='stations.csv', mime='text/csv')
-st.dataframe(sd.df, use_container_width=True)
+
+# 도표 표시 시 CL 리스트를 사용하여 디지털 채널 5개 -> UHD 채널 5개 순으로 보여줍니다.
+st.dataframe(sd.df[CL], use_container_width=True)
