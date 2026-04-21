@@ -25,7 +25,6 @@ if 'df' not in sd:
     except:
         sd.df = pd.DataFrame(columns=CL, dtype=str)
 
-# 세션 상태 초기화 (history, center 등)
 defaults = {'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
             'layer': "위성+도로", 'last_target': None, 'last_mode': "새로 등록", 'history': []}
 for k, v in defaults.items():
@@ -82,98 +81,7 @@ with st.sidebar:
             st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v61_mgr").geocode(sq)
+                l = Nominatim(user_agent="v62_mgr").geocode(sq)
                 if l:
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
-                    st.rerun()
-            except: st.error("검색 결과가 없습니다.")
-
-    st.divider()
-    m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
-    
-    # 수정 모드 시 시설 선택 처리
-    target_nm = None
-    if m_mode == "정보 수정" and not sd.df.empty:
-        target_nm = st.selectbox("수정할 시설 선택", sd.df['이름'].tolist())
-        
-    # [핵심] 모드나 대상 시설이 '바뀔 때만' 마커를 초기화합니다. (단순 클릭 시에는 유지)
-    if sd.last_mode != m_mode or sd.last_target != target_nm:
-        sd.t_la, sd.t_lo = None, None # 선택 변경 시에만 초기화!
-        if m_mode == "정보 수정" and target_nm:
-            row = sd.df[sd.df['이름'] == target_nm].iloc[0]
-            sd["i_cat"], sd["i_nm"] = row['구분'], row['이름']
-            sd["i_la_fixed"], sd["i_lo_fixed"] = float(row['위도']), float(row['경도'])
-            for s in SL: sd[f"i_{s}"] = str(row[s])
-            sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]] # 지도를 해당 시설로 이동
-        else:
-            sd["i_cat"], sd["i_nm"] = "중계소", ""
-            for s in SL: sd[f"i_{s}"] = ""
-        sd.last_mode, sd.last_target = m_mode, target_nm
-
-    cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
-    nm = st.text_input("시설 명칭", key="i_nm")
-    
-    # 좌표 결정 우선순위: 1.지도클릭/검색(t_la) > 2.기존시설좌표 > 3.기본중심점
-    curr_la = sd.t_la if sd.t_la is not None else sd.get("i_la_fixed", sd.center[0])
-    curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
-    
-    fla = st.number_input("위도", value=float(curr_la), format="%.6f")
-    flo = st.number_input("경도", value=float(curr_lo), format="%.6f")
-
-    st.write("📺 채널 (DTV | UHD)")
-    for i in range(0, len(SL), 2):
-        c1, c2 = st.columns(2)
-        c1.text_input(SL[i], key=f"i_{SL[i]}")
-        c2.text_input(SL[i+1], key=f"i_{SL[i+1]}")
-
-    if st.button("✅ 저장"):
-        if nm:
-            save_history()
-            v = [cat, nm] + [sd[f"i_{s}"] for s in SL] + [str(fla), str(flo), ""]
-            if m_mode == "정보 수정" and target_nm:
-                idx = sd.df[sd.df['이름'] == target_nm].index[0]
-                sd.df.loc[idx] = v
-            else:
-                sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
-
-    if not sd.df.empty:
-        st.divider()
-        del_tg = st.selectbox("삭제", sd.df['이름'].tolist(), key="del_box")
-        if st.button("🚨 삭제"):
-            save_history(); sd.df = sd.df[sd.df['이름'] != del_tg]
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
-
-# [3] 지도 출력
-ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위성+도로" else \
-     'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
-     'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
-
-m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
-if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
-
-for _, r in sd.df.iterrows():
-    try:
-        p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
-        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
-        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d}"
-        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
-    except: pass
-
-# [중요] 새로 찍은 포인트(초록색)는 어떤 모드에서든 sd.t_la가 있으면 무조건 표시합니다.
-if sd.t_la is not None:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
-
-res = st_folium(m, width="100%", height=800, key="map_v61")
-
-# 지도 클릭 시 좌표 갱신 (리셋 방지 로직 적용)
-if res and res.get('last_clicked'):
-    la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
-    if sd.t_la != la:
-        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]
-        st.rerun()
-
-st.dataframe(sd.df, use_container_width=True)
+                    st.
