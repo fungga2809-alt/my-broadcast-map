@@ -2,206 +2,205 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+from geopy.distance import geodesic
 import os
+import re
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
 
-st.set_page_config(page_title="Broadcasting Infrastructure Master", layout="wide")
+st.set_page_config(page_title="Broadcasting Master", layout="wide")
 DB = 'stations.csv'
 
-# [정의] 채널 및 컬럼
+# [채널 그룹화 정의]
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
-CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '메모']
+CL = ['구분','이름'] + SL + ['위도','경도','메모']
 
 sd = st.session_state
 
 # [1] 데이터 로드
-def load_data():
+if 'df' not in sd:
     try:
-        df = pd.read_csv(DB, dtype=str).fillna("")
-        if '지역' not in df.columns: df.insert(0, '지역', '미지정')
-        return df.reindex(columns=CL, fill_value="")
+        temp_df = pd.read_csv(DB, dtype=str).fillna("")
+        sd.df = temp_df.reindex(columns=CL, fill_value="")
+        if '구분' not in sd.df.columns: sd.df.insert(0, '구분', '중계소')
     except:
-        return pd.DataFrame(columns=CL, dtype=str)
+        sd.df = pd.DataFrame(columns=CL, dtype=str)
 
-if 'df' not in sd: sd.df = load_data()
-
-# 세션 상태 초기화 (v70 순정 방식)
-defaults = {
-    'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
-    'history': [], 'map_key': 0, 'sel_reg': "전체", 
-    'm_mode': "새로 등록", 'target_nm': None, 'last_loaded_nm': None
-}
+# 세션 상태 초기화 (map_jump 변수 추가)
+defaults = {'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
+            'layer': "위성+도로", 'last_target': None, 'last_mode': "새로 등록", 
+            'history': [], 'map_jump': 0}
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 
 for s in SL:
-    if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
+    if f"i_{s}" not in sd: sd[f"i_{s}"] = ""
 
-# [CSS] 최신 스타일 (대형 폰트 및 UI 정돈)
-st.markdown("""
-    <style>
-    html, body, [class*="css"] { font-size: 18px !important; }
-    th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; }
-    .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; }
-    .leaflet-popup-content { font-size: 14px !important; width: 250px !important; }
-    </style>
-    """, unsafe_allow_html=True)
+def save_history():
+    sd.history.append(sd.df.copy())
+    if len(sd.history) > 10: sd.history.pop(0)
 
-# ---------------------------------------------------------
-# [2] 사이드바: v70 레이아웃 (그룹화 입력)
-# ---------------------------------------------------------
+def parse_dms(dms_str):
+    try:
+        pattern = r"(\d+)°(\d+)'([\d.]+)\"([NSEW])"
+        parts = re.findall(pattern, dms_str)
+        if len(parts) != 2: return None, None
+        results = []
+        for d, m, s, h in parts:
+            dd = float(d) + float(m)/60 + float(s)/3600
+            if h in ['S', 'W']: dd = -dd
+            results.append(round(dd, 6))
+        return results[0], results[1]
+    except: return None, None
+
+st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
+
+# [2] 사이드바 도구
 with st.sidebar:
-    st.header("⚙️ 관제 및 관리")
-    
-    regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
-    sd.sel_reg = st.selectbox("🗺️ 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
-
-    # 검색 및 내 위치
-    st.subheader("🔍 위치 제어")
-    search_addr = st.text_input("주소/건물명 검색", key="addr_input")
-    if st.button("📍 위치 검색"):
-        if search_addr:
-            try:
-                geolocator = Nominatim(user_agent="broadcasting_v116")
-                loc = geolocator.geocode(search_addr)
-                if loc:
-                    sd.center = [loc.latitude, loc.longitude]
-                    sd.t_la, sd.t_lo = loc.latitude, loc.longitude
-                    sd.m_mode, sd.target_nm = "새로 등록", None
-                    sd.map_key += 1; st.rerun()
-            except: st.error("검색 오류")
-
-    c1, c2 = st.columns(2)
+    st.header("⚙️ 도구")
+    btn_col1, btn_col2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
-    if c1.button("🎯 내 위치"):
-        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]; sd.m_mode = "새로 등록"; sd.map_key += 1; st.rerun()
-    if c2.button("↩️ 되돌리기"):
-        if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
+    
+    if btn_col1.button("🎯 내 위치"):
+        if my_p: 
+            sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]
+            sd.map_jump += 1
+            st.rerun()
+        
+    if btn_col2.button("↩️ 되돌리기"):
+        if sd.history:
+            sd.df = sd.history.pop()
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
+            sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
 
     st.divider()
+    sd.layer = st.radio("🗺️ 지도 모드", ["위성+도로", "순수 위성", "일반 지도"], horizontal=True)
 
-    # 모드 설정 및 데이터 로딩 (v70 방식)
-    sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
-    f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-    names = f_df['이름'].tolist()
+    st.divider()
+    sq = st.text_input("📍 주소/DMS 좌표 검색")
+    if st.button("🔍 찾기"):
+        d_la, d_lo = parse_dms(sq)
+        if d_la and d_lo:
+            sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]
+            sd.map_jump += 1
+            st.rerun()
+        else:
+            try:
+                l = Nominatim(user_agent="v70_mgr").geocode(sq)
+                if l: 
+                    sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
+                    sd.map_jump += 1
+                    st.rerun()
+            except: st.error("검색 결과가 없습니다.")
+
+    st.divider()
+    m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
     
-    if sd.m_mode == "정보 수정" and names:
-        target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
-        sd.target_nm = st.selectbox("수정 대상", names, index=target_idx)
+    target_nm = None
+    if m_mode == "정보 수정" and not sd.df.empty:
+        target_nm = st.selectbox("수정할 시설 선택", sd.df['이름'].tolist())
         
-        if sd.last_loaded_nm != sd.target_nm:
-            row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
-            sd["v_reg"], sd["v_cat"], sd["v_nm"] = row['지역'], row['구분'], row['이름']
-            if not sd.t_la: sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
-            for s in SL: sd[f"ch_{s}"] = str(row[s])
-            sd.last_loaded_nm = sd.target_nm
-    else:
-        if sd.last_loaded_nm != "NEW":
-            sd["v_reg"], sd["v_cat"], sd["v_nm"] = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시", "중계소", ""
-            for s in SL: sd[f"ch_{s}"] = "" 
-            sd.last_loaded_nm = "NEW"
+    if sd.last_mode != m_mode or sd.last_target != target_nm:
+        if m_mode == "정보 수정" and target_nm:
+            row = sd.df[sd.df['이름'] == target_nm].iloc[0]
+            sd["i_cat"], sd["i_nm"] = row['구분'], row['이름']
+            sd["i_la_fixed"], sd["i_lo_fixed"] = float(row['위도']), float(row['경도'])
+            for s in SL: sd[f"i_{s}"] = str(row[s])
+            if sd.t_la is None: sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]]
+        else:
+            if sd.t_la is None:
+                sd["i_cat"], sd["i_nm"] = "중계소", ""
+                for s in SL: sd[f"i_{s}"] = ""
+        sd.last_mode, sd.last_target = m_mode, target_nm
 
-    # 입력 필드
-    st.text_input("지역", key="v_reg")
-    sd["v_cat"] = st.radio("구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1)
-    st.text_input("시설 명칭", key="v_nm")
-    la_v = st.number_input("위도", value=float(sd.t_la if sd.t_la else sd.center[0]), format="%.6f", key="inp_la")
-    lo_v = st.number_input("경도", value=float(sd.t_lo if sd.t_lo else sd.center[1]), format="%.6f", key="inp_lo")
-    sd.t_la, sd.t_lo = la_v, lo_v
+    cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
+    nm = st.text_input("시설 명칭", key="i_nm")
+    curr_la = sd.t_la if sd.t_la is not None else sd.get("i_la_fixed", sd.center[0])
+    curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
+    fla, flo = st.number_input("위도", value=float(curr_la), format="%.6f"), st.number_input("경도", value=float(curr_lo), format="%.6f")
 
-    # [v70 핵심] 채널 그룹화 입력
-    st.subheader("📺 물리 채널 설정")
-    st.info("📡 **DTV 채널**")
-    d_cols = st.columns(3)
-    for i, s in enumerate(SL_DTV): d_cols[i%3].text_input(s, key=f"ch_{s}")
-        
-    st.warning("✨ **UHD 채널**")
-    u_cols = st.columns(3)
-    for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
+    st.divider()
+    st.write("📺 **DTV 채널 (디지털)**")
+    dtv_cols = st.columns(3)
+    for idx, s in enumerate(SL_DTV): dtv_cols[idx % 3].text_input(s, key=f"i_{s}")
+    st.write("✨ **UHD 채널**")
+    uhd_cols = st.columns(3)
+    for idx, s in enumerate(SL_UHD): uhd_cols[idx % 3].text_input(s, key=f"i_{s}")
 
-    if st.button("✅ 데이터 저장"):
-        if sd["v_nm"]:
-            sd.history.append(sd.df.copy())
-            v = [sd["v_reg"], sd["v_cat"], sd["v_nm"]] + [sd[f"ch_{s}"] for s in SL] + [str(sd.t_la), str(sd.t_lo), ""]
-            if sd.m_mode == "정보 수정" and sd.target_nm:
-                idx = sd.df[sd.df['이름'] == sd.target_nm].index[0]; sd.df.loc[idx] = v
+    if st.button("✅ 저장"):
+        if nm:
+            save_history()
+            v = [cat, nm] + [sd[f"i_{s}"] for s in SL] + [str(fla), str(flo), ""]
+            if m_mode == "정보 수정" and target_nm:
+                idx = sd.df[sd.df['이름'] == target_nm].index[0]
+                sd.df.loc[idx] = v
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo, sd.target_nm, sd.last_loaded_nm = None, None, None, None
-            st.success("저장 완료!"); st.rerun()
+            sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
 
-    st.divider()
-    del_target = st.selectbox("삭제 시설 선택", ["선택 안 함"] + sd.df['이름'].tolist(), key="del_box")
-    if st.button("🚨 시설 삭제"):
-        if del_target != "선택 안 함":
-            sd.history.append(sd.df.copy())
-            sd.df = sd.df[sd.df['이름'] != del_target]
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
+    if not sd.df.empty:
+        st.divider()
+        del_tg = st.selectbox("삭제 시설 선택", sd.df['이름'].tolist(), key="del_box")
+        if st.button("🚨 시설 삭제"):
+            save_history(); sd.df = sd.df[sd.df['이름'] != del_tg]; sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
-# ---------------------------------------------------------
-# [3] 본문: 지도 제어 (v70 시스템 복구)
-# ---------------------------------------------------------
-st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
-disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
+# [3] 지도 출력
+ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위성+도로" else \
+     'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
+     'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
-m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
+# [핵심] 지도가 강제로 움직이게 하기 위해 key에 map_jump 변수를 포함합니다.
+m_key = f"map_render_{sd.map_jump}"
+m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
 
-for _, r in disp_df.iterrows():
+if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+for _, r in sd.df.iterrows():
     try:
-        p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        # 팝업 (v70 방식)
-        dt_t = " | ".join([f"{s}:{r[s]}" for s in SL_DTV])
-        uh_t = " | ".join([f"{s}:{r[s]}" for s in SL_UHD])
-        p_html = f"<div style='width:250px;'><b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt_t}<br>UHD: {uh_t}</div>"
-        
-        # 라벨 디자인 (클릭 투과)
-        l_html = f'''<div style="display: inline-block; padding: 4px 10px; background-color: white; border: 2px solid {color}; border-radius: 6px; color: {color}; font-size: 10pt; font-weight: bold; white-space: nowrap; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); transform: translate(15px, -35px); pointer-events: none;">{r["이름"]}</div>'''
-        folium.Marker(p, icon=folium.DivIcon(html=l_html, icon_anchor=(0,0))).add_to(m)
-        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=300)).add_to(m)
+        p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
+        dt = " | ".join([f"{s}:{r[s]}" for s in SL_DTV if str(r[s]).strip() != ""])
+        uh = " | ".join([f"{s}:{r[s]}" for s in SL_UHD if str(r[s]).strip() != ""])
+        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}"
+        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-# 녹색 마커 (t_la 기준)
 if sd.t_la is not None:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-# 지도 출력 및 클릭 감지 (v70의 신규 등록/수정 모드 완벽 재현)
-map_data = st_folium(m, width="100%", height=700, key=f"map_v116_{sd.map_key}")
+res = st_folium(m, width="100%", height=800, key=m_key)
 
-if map_data.get("last_clicked"): # 지도 배경 클릭 시
-    cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-    # 150m 이내 시설 체크 (수정 모드 전환용)
-    match = disp_df[(disp_df['위도'].astype(float).sub(cla).abs() < 0.0015) & (disp_df['경도'].astype(float).sub(clo).abs() < 0.0015)]
-    if not match.empty:
-        sel_row = match.iloc[0]
-        if sd.target_nm != sel_row['이름']:
-            sd.m_mode, sd.target_nm, sd.last_loaded_nm = "정보 수정", sel_row['이름'], None
-            sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
-            sd.t_la, sd.t_lo = None, None
-            sd.map_key += 1; st.rerun()
-    else: # 주변에 시설 없으면 ➡️ 무조건 신규 등록(녹색 마커 이동)
-        if sd.t_la != cla:
-            sd.t_la, sd.t_lo, sd.m_mode, sd.target_nm = cla, clo, "새로 등록", None
-            sd.map_key += 1; st.rerun()
+if res and res.get('last_clicked'):
+    la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
+    if sd.t_la != la: sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
 
+# [4] 하단 데이터 관리 및 클릭 동기화
 st.divider()
-# [하단 표] 18px 폰트 및 중앙 정렬
-cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
-def style_row(row):
-    color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
-    return [color for _ in row]
-styled_df = disp_df[CL].style.apply(style_row, axis=1)
-event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, column_config=cfg, key="main_table")
+c1, c2 = st.columns([8, 2])
+c1.subheader("📊 데이터 관리 현황")
+csv_data = sd.df[CL].to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+c2.download_button(label="📥 최신 CSV 받기", data=csv_data, file_name='stations.csv', mime='text/csv')
 
+# 표 선택 이벤트 감지
+event = st.dataframe(
+    sd.df[CL], 
+    use_container_width=True, 
+    on_select="rerun", 
+    selection_mode="single-row",
+    hide_index=True
+)
+
+# [점프 로직] 표에서 행이 선택되면 좌표를 업데이트하고 맵 점프 카운트를 올립니다.
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
-    sel_row = disp_df.iloc[idx]
-    if sd.target_nm != sel_row['이름']:
-        sd.center, sd.m_mode, sd.target_nm, sd.last_loaded_nm = [float(sel_row['위도']), float(sel_row['경도'])], "정보 수정", sel_row['이름'], None
-        sd.map_key += 1; st.rerun()
-
-st.download_button(label="📥 전체 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
+    sel_row = sd.df.iloc[idx]
+    try:
+        new_la, new_lo = float(sel_row['위도']), float(sel_row['경도'])
+        if sd.center != [new_la, new_lo]:
+            sd.center = [new_la, new_lo]
+            sd.t_la, sd.t_lo = new_la, new_lo
+            sd.map_jump += 1 # 맵 키를 변경하여 강제 점프 유도
+            st.rerun()
+    except: pass
