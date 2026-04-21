@@ -57,18 +57,27 @@ st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 with st.sidebar:
     st.header("⚙️ 도구")
     
-    t_c1, t_c2 = st.columns(2)
+    # [복구] 내 위치 찾기 및 되돌리기 버튼 레이아웃
+    btn_col1, btn_col2 = st.columns(2)
+    
+    # GPS 위치 가져오기
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     
-    if t_c1.button("🎯 내 위치로"):
-        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, None, None; st.rerun()
+    if btn_col1.button("🎯 내 위치", help="현재 GPS 위치로 지도를 이동합니다"):
+        if my_p:
+            sd.center = my_p
+            sd.t_la, sd.t_lo = my_p[0], my_p[1] # 마커도 내 위치로 이동
+            st.rerun()
+        else:
+            st.error("GPS 신호를 기다리는 중이거나 권한이 없습니다.")
         
-    if t_c2.button("↩️ 되돌리기"):
+    if btn_col2.button("↩️ 되돌리기"):
         if sd.history:
             sd.df = sd.history.pop()
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
+            sd.t_la, sd.t_lo, sd.last_target = None, None, None
+            st.rerun()
 
     st.divider()
     sd.layer = st.radio("🗺️ 지도 모드", ["위성+도로", "순수 위성", "일반 지도"], horizontal=True)
@@ -81,7 +90,7 @@ with st.sidebar:
             sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]; st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v64_mgr").geocode(sq)
+                l = Nominatim(user_agent="v65_mgr").geocode(sq)
                 if l:
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]; st.rerun()
             except: st.error("검색 결과가 없습니다.")
@@ -133,7 +142,6 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
 
-    # [복구] 삭제 버튼 섹션
     if not sd.df.empty:
         st.divider()
         del_tg = st.selectbox("삭제 시설 선택", sd.df['이름'].tolist(), key="del_box")
@@ -164,7 +172,7 @@ for _, r in sd.df.iterrows():
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v64")
+res = st_folium(m, width="100%", height=800, key="map_v65")
 
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
@@ -181,8 +189,7 @@ c2.download_button(
     label="📥 최신 CSV 받기",
     data=csv_data,
     file_name='stations.csv',
-    mime='text/csv',
-    help="수정된 데이터를 다운로드하여 깃허브에 업로드하세요."
+    mime='text/csv'
 )
 
 st.dataframe(sd.df, use_container_width=True)
