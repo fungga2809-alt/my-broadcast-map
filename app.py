@@ -7,7 +7,7 @@ import os
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
 
-# [1] 설정
+# [1] 기본 설정 (와이드 레이아웃)
 st.set_page_config(page_title="Broadcasting Map", layout="wide")
 DB = 'stations.csv'
 SL = ['SBS','SBS(U)','KBS2','KBS2(U)','KBS1','KBS1(U)','EBS','EBS(U)','MBC','MBC(U)']
@@ -30,7 +30,7 @@ if 'center' not in sd: sd.center = [35.1796, 129.0756]
 if 't_la' not in sd: sd.t_la = None
 if 't_lo' not in sd: sd.t_lo = None
 
-# 제목 변경
+# 요청하신 제목으로 변경
 st.markdown("## 📡 송/중계소 등록")
 
 # [3] 사이드바 도구
@@ -48,7 +48,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v39_mgr")
+        g = Nominatim(user_agent="v37_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -59,15 +59,19 @@ with st.sidebar:
     st.markdown("### 📍 시설 등록")
     cat = st.radio("구분", ["송신소", "중계소"], horizontal=True)
     nm = st.text_input("시설 명칭")
+    
     la_v = sd.t_la if sd.t_la else sd.center[0]
     lo_v = sd.t_lo if sd.t_lo else sd.center[1]
-    fla, flo = st.number_input("위도", value=float(la_v)), st.number_input("경도", value=float(lo_v))
+    fla = st.number_input("위도", value=float(la_v), format="%.6f")
+    flo = st.number_input("경도", value=float(lo_v), format="%.6f")
 
     chs = {}
     st.write("📺 채널 (DTV | UHD)")
     for i in range(0, len(SL), 2):
         c1, c2 = st.columns(2)
-        chs[SL[i]], chs[SL[i+1]] = c1.text_input(SL[i], key=f"i_{SL[i]}"), c2.text_input(SL[i+1], key=f"i_{SL[i+1]}")
+        d_n, u_n = SL[i], SL[i+1]
+        chs[d_n] = c1.text_input(d_n, key=f"i_{d_n}")
+        chs[u_n] = c2.text_input(u_n, key=f"i_{u_n}")
 
     if st.button("✅ 저장"):
         if nm:
@@ -85,10 +89,11 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [4] 지도 설정 (세로 500px로 최적화)
+# [4] 지도 설정
+# 전문가님 요청으로 지도 크기를 대폭 키움 (가로 100%, 세로 800)
 m = folium.Map(location=sd.center, zoom_start=14)
-ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
-folium.TileLayer(tiles=ly, attr='G', name='Satellite').add_to(m)
+ly1 = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
+folium.TileLayer(tiles=ly1, attr='G', name='Satellite').add_to(m)
 
 if my_p:
     folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
@@ -98,12 +103,26 @@ for _, r in sd.df.iterrows():
         p = [float(r['위도']), float(r['경도'])]
         clr = 'red' if r['구분'] == '송신소' else 'blue'
         d_km = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
+        
         dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
         uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
         txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d_km}"
+        
         folium.Marker(p, popup=folium.Popup(txt, max_width=300), 
                       icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
+
+# 지도 출력 (width="100%", height=800으로 확대)
+res = st_folium(m, width="100%", height=800, key="map_v37_large")
+
+if res and res.get('last_clicked'):
+    lc = res['last_clicked']
+    la, lo = round(lc['lat'], 6), round(lc['lng'], 6)
+    if sd.t_la != la:
+        sd.t_la, sd.t_lo = la, lo
+        st.rerun()
+
+st.dataframe(sd.df, use_container_width=True)
