@@ -46,7 +46,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v47_mgr")
+        g = Nominatim(user_agent="v48_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -86,57 +86,12 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [3] 지도 레이어 완벽 고정
-# tiles=None 으로 기본 지도를 아예 삭제합니다!
+# [3] 지도 레이어 완벽 고정 (show 속성 사용)
 m = folium.Map(location=sd.center, zoom_start=14, tiles=None)
 
 ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}'
 ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
-# 첫 번째로 등록하는 레이어가 무조건 영구적인 '기본 화면'이 됩니다.
-folium.TileLayer(tiles=ly_y, attr='G', name='위성+도로').add_to(m)
-folium.TileLayer(tiles=ly_s, attr='G', name='순수 위성').add_to(m)
-folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도').add_to(m)
-
-# 레이어 컨트롤 활성화
-folium.LayerControl().add_to(m)
-
-if my_p:
-    folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
-
-for _, r in sd.df.iterrows():
-    try:
-        p = [float(r['위도']), float(r['경도'])]
-        clr = 'red' if r['구분'] == '송신소' else 'blue'
-        d = ""
-        if my_p:
-            dist = round(geodesic(my_p, p).km, 2)
-            d = "<br>📏 " + str(dist) + "km"
-        
-        dt = " | ".join([str(s)+":"+str(r[s]) for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
-        uh = " | ".join([str(s)+":"+str(r[s]) for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        
-        p1 = "<b>[" + str(r['구분']) + "] " + str(r['이름']) + "</b><br>"
-        p2 = "DTV: " + dt + "<br>UHD: " + uh + d
-        txt = p1 + p2
-        
-        ic2 = folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')
-        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=ic2).add_to(m)
-    except:
-        pass
-
-if sd.t_la:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
-
-res = st_folium(m, width="100%", height=800, key="map_v47")
-
-if res and res.get('last_clicked'):
-    lc = res['last_clicked']
-    la = round(lc['lat'], 6)
-    lo = round(lc['lng'], 6)
-    if sd.t_la != la:
-        sd.t_la, sd.t_lo = la, lo
-        st.rerun()
-
-st.dataframe(sd.df, use_container_width=True)
+# 핵심: 위성+도로만 show=True 로 켜두고, 나머지는 show=False 로 꺼둡니다!
+folium.TileLayer(tiles=ly_y, attr='
