@@ -15,20 +15,29 @@ DB = 'stations.csv'
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
-# 전문가님이 수정하신 '지역' 포함 컬럼 순서
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '메모']
 
 sd = st.session_state
 
-# [1] 데이터 로드 및 최적화
-if 'df' not in sd:
+# [1] 데이터 로드 로직 보강 (KeyError 방지)
+def load_data():
     try:
-        temp_df = pd.read_csv(DB, dtype=str).fillna("")
-        # 불러온 데이터의 컬럼 순서를 CL과 동일하게 강제 교정합니다.
-        sd.df = temp_df.reindex(columns=CL, fill_value="")
+        # 깃허브에서 최신 파일을 읽어옵니다.
+        df = pd.read_csv(DB, dtype=str).fillna("")
+        # 만약 '지역' 컬럼이 없으면 맨 앞에 빈 칸으로 생성합니다.
+        if '지역' not in df.columns:
+            df.insert(0, '지역', '미지정')
+        # 정해진 컬럼 순서(CL)대로 다시 정렬합니다.
+        df = df.reindex(columns=CL, fill_value="")
+        return df
     except:
-        sd.df = pd.DataFrame(columns=CL, dtype=str)
+        return pd.DataFrame(columns=CL, dtype=str)
 
+# 앱 시작 시 또는 데이터가 없을 때 로드
+if 'df' not in sd or '지역' not in sd.df.columns:
+    sd.df = load_data()
+
+# 세션 상태 초기화
 defaults = {'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
             'layer': "위성+도로", 'last_target': None, 'last_mode': "새로 등록", 
             'history': [], 'map_key': 0, 'sel_reg': "전체"}
@@ -42,19 +51,24 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
-st.markdown(f"## 📡 전국 방송 인프라 마스터 (현재 지역: {sd.sel_reg})")
-
 # ---------------------------------------------------------
-# [2] 사이드바: 지역 필터 및 도구 (가장 먼저 실행)
+# [2] 사이드바: 지역 필터 및 도구
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 전국 지역 필터")
     
-    # 지역 목록 추출 (데이터가 있으면 추출, 없으면 기본값)
-    regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
-    new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
+    # [수정] 데이터가 비어있을 때를 대비한 지역 목록 추출
+    if not sd.df.empty:
+        regs = ["전체"] + sorted(sd.df['지역'].unique().tolist())
+    else:
+        regs = ["전체"]
     
-    # 지역 필터가 바뀌면 지도를 해당 지역의 첫 번째 데이터로 이동
+    # 현재 선택된 지역이 목록에 없으면 '전체'로 초기화
+    if sd.sel_reg not in regs:
+        sd.sel_reg = "전체"
+        
+    new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg))
+    
     if new_reg != sd.sel_reg:
         sd.sel_reg = new_reg
         reg_df = sd.df[sd.df['지역'] == new_reg] if new_reg != "전체" else sd.df
@@ -78,9 +92,8 @@ with st.sidebar:
     st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
     
-    # 현재 필터링된 지역의 시설만 수정 대상으로 표시
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-    target_nm = st.selectbox("수정 대상 선택", f_df['이름'].tolist()) if m_mode == "정보 수정" else None
+    target_nm = st.selectbox("수정 대상 선택", f_df['이름'].tolist()) if m_mode == "정보 수정" and not f_df.empty else None
         
     if sd.last_mode != m_mode or sd.last_target != target_nm:
         if m_mode == "정보 수정" and target_nm:
@@ -95,8 +108,7 @@ with st.sidebar:
             for s in SL: sd[f"i_{s}"] = ""
         sd.last_mode, sd.last_target = m_mode, target_nm
 
-    # 입력 폼
-    st.text_input("지역", key="i_reg")
+    st.text_input("지역 (예: 부산광역시)", key="i_reg")
     st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     st.text_input("시설 명칭", key="i_nm")
     la_val = sd.t_la if sd.t_la else sd.get("i_la_fixed", sd.center[0])
@@ -118,11 +130,13 @@ with st.sidebar:
             sd.t_la, sd.t_lo = None, None; st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 표 선택 로직을 지도보다 먼저 배치 (중요!)
+# [3] 본문: 리스트 및 지도 (순서 최적화)
 # ---------------------------------------------------------
+st.markdown(f"### 📡 {sd.sel_reg} 방송 인프라 마스터")
+
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-st.subheader(f"📊 {sd.sel_reg} 시설 목록 (클릭 시 지도 이동)")
+# 리스트 출력 및 선택 이벤트
 event = st.dataframe(
     disp_df[CL], 
     use_container_width=True, 
@@ -132,34 +146,32 @@ event = st.dataframe(
     key="main_table"
 )
 
-# 표에서 시설을 클릭했는지 확인하고, 클릭했다면 지도 중심점(sd.center)을 미리 바꿉니다.
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
-    new_la, new_lo = float(sel_row['위도']), float(sel_row['경도'])
-    if sd.center != [new_la, new_lo]:
-        sd.center = [new_la, new_lo]
-        sd.t_la, sd.t_lo = new_la, new_lo
-        sd.map_key += 1 # 지도를 새로 그리게 함
-        st.rerun()
+    try:
+        new_la, new_lo = float(sel_row['위도']), float(sel_row['경도'])
+        if sd.center != [new_la, new_lo]:
+            sd.center = [new_la, new_lo]
+            sd.t_la, sd.t_lo = new_la, new_lo
+            sd.map_key += 1
+            st.rerun()
+    except: pass
 
-# ---------------------------------------------------------
-# [4] 본문: 지도 출력 (변경된 sd.center가 즉시 반영됨)
-# ---------------------------------------------------------
+# 지도 출력
 ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
 
 for _, r in disp_df.iterrows():
     try:
         p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        txt = f"<b>[{r['지역']}] {r['이름']}</b>"
-        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
+        folium.Marker(p, popup=folium.Popup(f"[{r['지역']}] {r['이름']}", max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
 if sd.t_la: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-# 지도를 표 아래에 배치하여 시각적 흐름 완성
-st_folium(m, width="100%", height=600, key=f"map_v74_{sd.map_key}")
+st_folium(m, width="100%", height=600, key=f"map_v75_{sd.map_key}")
 
+# 백업 다운로드
 csv_data = sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 st.download_button(label="📥 전체 데이터 CSV 백업", data=csv_data, file_name='stations.csv', mime='text/csv')
