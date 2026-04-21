@@ -28,7 +28,7 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# 세션 상태 초기화
+# 세션 상태 초기화 (v105 핵심: 연동성 강화)
 defaults = {
     'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
@@ -64,7 +64,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v104")
+                geolocator = Nominatim(user_agent="broadcasting_master_v105")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
@@ -82,17 +82,22 @@ with st.sidebar:
 
     st.divider()
 
+    # 모드 설정
     sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
+    
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
     
+    # [v105 핵심] 정보 로딩 로직: 수정 모드일 때 세션에 값 고정
     if sd.m_mode == "정보 수정" and names:
         target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
         sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx)
         
+        # 시설이 바뀌었을 때만 채널 정보 다시 로드
         if sd.last_loaded_nm != sd.target_nm:
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
             sd["v_reg"], sd["v_cat"], sd["v_nm"] = row['지역'], row['구분'], row['이름']
+            # 좌표는 마커 클릭 좌표가 없으면 시설 좌표 사용
             if not sd.t_la: sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
             for s in SL: sd[f"ch_{s}"] = str(row[s])
             sd.last_loaded_nm = sd.target_nm
@@ -102,6 +107,7 @@ with st.sidebar:
             for s in SL: sd[f"ch_{s}"] = "" 
             sd.last_loaded_nm = "NEW"
 
+    # 시설 정보 입력
     new_reg = st.text_input("지역", key="v_reg")
     new_cat = st.radio("구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1, key="v_cat_radio")
     sd["v_cat"] = new_cat
@@ -111,7 +117,7 @@ with st.sidebar:
     final_lo = st.number_input("경도", value=float(sd.t_lo if sd.t_lo else sd.center[1]), format="%.6f", key="inp_lo")
     sd.t_la, sd.t_lo = final_la, final_lo
 
-    st.subheader("📺 채널 정보 (그룹화)")
+    st.subheader("📺 물리 채널 정보")
     st.info("📡 **DTV 채널**")
     dtv_cols = st.columns(3)
     for i, s in enumerate(SL_DTV): dtv_cols[i%3].text_input(s, key=f"ch_{s}")
@@ -155,23 +161,12 @@ for _, r in disp_df.iterrows():
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
         
         label_html = f'''
-            <div style="
-                display: inline-block;
-                padding: 4px 10px;
-                background-color: white;
-                border: 2px solid {color};
-                border-radius: 6px;
-                color: {color};
-                font-size: 10pt;
-                font-weight: bold;
-                white-space: nowrap;
-                box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-                transform: translate(10px, -45px);
-            ">
+            <div style="display: inline-block; padding: 4px 10px; background-color: white; border: 2px solid {color}; border-radius: 6px;
+                color: {color}; font-size: 10pt; font-weight: bold; white-space: nowrap; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+                transform: translate(10px, -45px);">
                 {r["이름"]}
             </div>
         '''
-        # v104 핵심: 마커 클릭 시 감도를 위해 툴팁(Tooltip) 추가 및 이름 정보 매핑
         folium.Marker(p, icon=folium.DivIcon(html=label_html, icon_anchor=(0,0))).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), tooltip=r['이름']).add_to(m)
     except: pass
@@ -180,44 +175,48 @@ if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
 # 지도 출력
-map_data = st_folium(m, width="100%", height=700, key=f"map_v104_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v105_{sd.map_key}")
 
-# [v104 지능형 클릭 매칭 로직]
-click_obj = map_data.get("last_object_clicked")
-click_bg = map_data.get("last_clicked")
-
-if click_obj:
-    cla, clo = click_obj["lat"], click_obj["lng"]
-    # 오차 범위(epsilon)를 두어 근처의 마커를 찾음 (소수점 4자리까지 허용)
+# [v105 하이라이트] 마커 클릭 시 사이드바에 채널 데이터 '강제 주입'
+if map_data.get("last_object_clicked"):
+    cla = map_data["last_object_clicked"]["lat"]
+    clo = map_data["last_object_clicked"]["lng"]
+    # 0.0005 이내 오차 범위로 시설 검색
     match = disp_df[
         (disp_df['위도'].astype(float).sub(cla).abs() < 0.0005) & 
         (disp_df['경도'].astype(float).sub(clo).abs() < 0.0005)
     ]
     if not match.empty:
         sel_row = match.iloc[0]
-        if sd.target_nm != sel_row['이름']:
-            sd.m_mode, sd.target_nm = "정보 수정", sel_row['이름']
-            sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
-            sd.t_la, sd.t_lo = None, None
-            sd.map_key += 1; st.rerun()
+        # 1. 모드와 타겟 이름 설정
+        sd.m_mode = "정보 수정"
+        sd.target_nm = sel_row['이름']
+        sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
+        
+        # 2. [핵심] 사이드바 입력창에 채널 값 강제 주입
+        for s in SL:
+            sd[f"ch_{s}"] = str(sel_row[s])
+        
+        # 3. 로딩 상태 초기화 및 맵 갱신
+        sd.last_loaded_nm = sel_row['이름']
+        sd.t_la, sd.t_lo = None, None
+        sd.map_key += 1; st.rerun()
 
-elif click_bg:
-    cla, clo = click_bg["lat"], click_bg["lng"]
+# 배경 클릭 시 신규 좌표 획득
+elif map_data.get("last_clicked"):
+    cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo; st.rerun()
 
 st.divider()
 st.markdown(f"### 📊 데이터 관리 현황", unsafe_allow_html=True)
-
+# ... 하단 표 로직 (기존 동일)
 cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
 def style_row(row):
     color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
     return [color for _ in row]
-
 styled_df = disp_df[CL].style.apply(style_row, axis=1)
-
 event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, column_config=cfg, key="main_table")
-
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
