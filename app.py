@@ -83,37 +83,4 @@ with st.sidebar:
         tg = st.selectbox("삭제", sd.df['이름'].tolist())
         if st.button("🚨 삭제"):
             sd.df = sd.df[sd.df['이름'] != tg]
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            st.rerun()
-
-# [3] 지도 레이어 완벽 방어 (show 속성 활용)
-m = folium.Map(location=sd.center, zoom_start=14, tiles=None)
-
-ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
-ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}'
-ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
-
-# 위성+도로만 show=True로 강제 활성화하고 나머지는 숨깁니다!
-folium.TileLayer(tiles=ly_y, attr='G', name='위성+도로', show=True).add_to(m)
-folium.TileLayer(tiles=ly_s, attr='G', name='순수 위성', show=False).add_to(m)
-folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도', show=False).add_to(m)
-
-folium.LayerControl().add_to(m)
-
-if my_p:
-    folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
-
-for _, r in sd.df.iterrows():
-    try:
-        p = [float(r['위도']), float(r['경도'])]
-        clr = 'red' if r['구분'] == '송신소' else 'blue'
-        d = ""
-        if my_p:
-            dist = round(geodesic(my_p, p).km, 2)
-            d = f"<br>📏 {dist}km"
-        
-        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
-        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        
-        p1 = f"<b>[{r['구분']}] {r['이름']}</b><br>"
-        p2 = f"DTV: {dt}<br>UHD: {
+            sd
