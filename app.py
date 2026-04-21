@@ -61,7 +61,9 @@ with st.sidebar:
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
     
     if t_c1.button("🎯 내 위치로"):
-        if my_p: sd.center, sd.t_la, sd.t_lo = my_p, None, None; st.rerun()
+        if my_p: 
+            sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]
+            st.rerun()
         
     if t_c2.button("↩️ 되돌리기"):
         if sd.history:
@@ -77,18 +79,16 @@ with st.sidebar:
     if st.button("🔍 찾기"):
         d_la, d_lo = parse_dms(sq)
         if d_la and d_lo:
-            # 포인트가 생기도록 세션 좌표를 강제 업데이트합니다.
+            # 좌표 고정력 강화
             sd.t_la, sd.t_lo = d_la, d_lo
             sd.center = [d_la, d_lo]
-            sd["i_la_val"], sd["i_lo_val"] = d_la, d_lo # 입력창 좌표도 즉시 동기화
-            st.success("DMS 위치 확인")
+            st.success(f"좌표 변환: {d_la}, {d_lo}")
             st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v60_mgr").geocode(sq)
+                l = Nominatim(user_agent="v61_mgr").geocode(sq)
                 if l:
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
-                    sd["i_la_val"], sd["i_lo_val"] = l.latitude, l.longitude
                     st.rerun()
             except: st.error("검색 결과가 없습니다.")
 
@@ -115,7 +115,7 @@ with st.sidebar:
     cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     nm = st.text_input("시설 명칭", key="i_nm")
     
-    # [핵심] 검색 결과(t_la)가 있으면 최우선 반영, 없으면 기존 입력값 사용
+    # 좌표 결정 우선순위: 1. 클릭/검색된 좌표(t_la) -> 2. 기존 데이터 좌표(i_la_val) -> 3. 기본 중심점
     final_la = sd.t_la if sd.t_la is not None else sd.get("i_la_val", sd.center[0])
     final_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_val", sd.center[1])
     
@@ -165,13 +165,13 @@ for _, r in sd.df.iterrows():
         folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-# 검색된 포인트(초록색 마커) 표시
+# 임시 마커 고정 로직: t_la 값이 있으면 무조건 그립니다.
 if sd.t_la is not None:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-crosshairs', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key="map_v60")
+res = st_folium(m, width="100%", height=800, key="map_v61")
 
-# 지도 클릭 시 좌표 갱신
+# 지도 클릭 시 좌표 갱신 (지도가 데이터를 보고할 때 t_la를 유지합니다)
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
     if sd.t_la != la:
