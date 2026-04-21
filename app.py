@@ -37,7 +37,7 @@ defaults = {
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 
-# [중요] 채널 입력값 세션 보존용 초기화 (최초 1회만)
+# 채널 입력값 세션 보존용 초기화
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
@@ -51,7 +51,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v70 디자인 + v98 데이터 박제 로직
+# [2] 사이드바: v70 디자인 및 데이터 로딩 로직
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -60,20 +60,18 @@ with st.sidebar:
     regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
     sd.sel_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
 
-    # 주소 검색 (v98: 검색 시 채널 데이터는 건드리지 않음)
+    # 주소 검색
     st.subheader("🔍 주소/지명 검색")
     search_addr = st.text_input("검색할 주소 또는 건물명", key="addr_input")
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v98")
+                geolocator = Nominatim(user_agent="broadcasting_master_v99")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
                     sd.t_la, sd.t_lo = location.latitude, location.longitude
-                    sd.map_key += 1
-                    # 검색 시에는 채널 데이터를 초기화하지 않음!
-                    st.rerun()
+                    sd.map_key += 1; st.rerun()
             except: st.error("검색 엔진 오류")
 
     c1, c2 = st.columns(2)
@@ -92,57 +90,47 @@ with st.sidebar:
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
     
-    # 정보 수정 모드일 때 데이터 로딩 (최초 1회만 불러오기)
+    # [데이터 로딩 로직] 수정 또는 새 등록 시 값 세팅
     if sd.m_mode == "정보 수정" and names:
         target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
         sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx)
         
-        # 선택한 시설이 바뀌었을 때만 채널 정보를 새로 불러옴
         if sd.last_loaded_nm != sd.target_nm:
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
             sd["v_reg"], sd["v_cat"], sd["v_nm"] = row['지역'], row['구분'], row['이름']
-            # 좌표는 t_la(검색좌표)가 없으면 원본 좌표 사용
             if not sd.t_la: sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
             for s in SL: sd[f"ch_{s}"] = str(row[s])
             sd.last_loaded_nm = sd.target_nm
     else:
-        # 새로 등록 모드일 때 (새로운 등록으로 넘어온 경우만 초기화)
         if sd.last_loaded_nm != "NEW":
             sd["v_reg"], sd["v_cat"], sd["v_nm"] = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시", "중계소", ""
-            for s in SL: sd[f"ch_{s}"] = ""
+            for s in SL: sd[f"ch_{s}"] = "" # 입력창 비우기
             sd.last_loaded_nm = "NEW"
 
-    # 시설 정보 입력 (key를 사용하여 세션 상태와 직접 연결)
+    # 기본 정보 입력
     new_reg = st.text_input("지역", key="v_reg")
     new_cat = st.radio("구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1, key="v_cat_radio")
-    # 라디오 버튼의 결과를 v_cat 세션에 저장
     sd["v_cat"] = new_cat
     new_nm = st.text_input("시설 명칭", key="v_nm")
     
-    # 위도/경도 입력 (t_la 검색 좌표와 연동)
     final_la = st.number_input("위도", value=float(sd.t_la if sd.t_la else sd.center[0]), format="%.6f", key="inp_la")
     final_lo = st.number_input("경도", value=float(sd.t_lo if sd.t_lo else sd.center[1]), format="%.6f", key="inp_lo")
-    # 입력 시 세션 업데이트
     sd.t_la, sd.t_lo = final_la, final_lo
 
-    # [v70 스타일] 채널 정보 그룹화 입력 (key를 활용해 데이터 박제)
+    # 채널 정보 그룹화 입력
     st.subheader("📺 채널 정보 (그룹화)")
     st.info("📡 **DTV 채널**")
     dtv_cols = st.columns(3)
-    for i, s in enumerate(SL_DTV):
-        # key를 "ch_SBS" 등으로 지정하면 사용자가 입력할 때마다 sd["ch_SBS"]에 자동 저장됨
-        dtv_cols[i%3].text_input(s, key=f"ch_{s}")
+    for i, s in enumerate(SL_DTV): dtv_cols[i%3].text_input(s, key=f"ch_{s}")
         
     st.warning("✨ **UHD 채널**")
     uhd_cols = st.columns(3)
-    for i, s in enumerate(SL_UHD):
-        uhd_cols[i%3].text_input(s, key=f"ch_{s}")
+    for i, s in enumerate(SL_UHD): uhd_cols[i%3].text_input(s, key=f"ch_{s}")
 
     if st.button("✅ 데이터 저장"):
         if sd["v_nm"]:
             sd.history.append(sd.df.copy())
-            ch_vals = [sd[f"ch_{s}"] for s in SL]
-            v = [sd["v_reg"], sd["v_cat"], sd["v_nm"]] + ch_vals + [str(sd.t_la), str(sd.t_lo), ""]
+            v = [sd["v_reg"], sd["v_cat"], sd["v_nm"]] + [sd[f"ch_{s}"] for s in SL] + [str(sd.t_la), str(sd.t_lo), ""]
             
             if sd.m_mode == "정보 수정" and sd.target_nm:
                 idx = sd.df[sd.df['이름'] == sd.target_nm].index[0]
@@ -151,12 +139,11 @@ with st.sidebar:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            # 저장 후에는 검색 마커와 채널 데이터 초기화
+            
+            # [오류 해결 포인트] 저장 후 직접 값을 비우지 않고, 트리거만 초기화하여 다음 실행 때 비워지게 함
             sd.t_la, sd.t_lo, sd.target_nm, sd.last_loaded_nm = None, None, None, None
-            for s in SL: sd[f"ch_{s}"] = ""
             st.success("저장 완료!"); st.rerun()
 
-    # 시설 삭제
     st.divider()
     del_target = st.selectbox("삭제 시설 선택", ["선택 안 함"] + sd.df['이름'].tolist(), key="del_box")
     if st.button("🚨 시설 삭제"):
@@ -170,7 +157,9 @@ with st.sidebar:
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 
+# 필터링된 데이터 정의
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
+
 m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
@@ -180,18 +169,15 @@ for _, r in disp_df.iterrows():
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-# 검색된 녹색 마커는 t_la가 있을 때 항상 표시
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=500, key=f"map_v98_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=500, key=f"map_v99_{sd.map_key}")
 
-# 지도 클릭 시 좌표 획득 (입력값 유지)
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
-        sd.t_la, sd.t_lo = cla, clo
-        st.rerun()
+        sd.t_la, sd.t_lo = cla, clo; st.rerun()
 
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
@@ -205,13 +191,11 @@ styled_df = disp_df[CL].style.apply(style_row, axis=1)
 
 event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, column_config=cfg, key="main_table")
 
-# 표 클릭 시 수정 모드 전환
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
     if sd.target_nm != sel_row['이름']:
         sd.center, sd.m_mode, sd.target_nm = [float(sel_row['위도']), float(sel_row['경도'])], "정보 수정", sel_row['이름']
-        sd.t_la, sd.t_lo = None, None # 표 클릭 시에는 검색 마커 해제
         sd.map_key += 1; st.rerun()
 
 st.download_button(label="📥 전체 데이터 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
