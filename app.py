@@ -64,7 +64,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v103")
+                geolocator = Nominatim(user_agent="broadcasting_master_v104")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
@@ -93,7 +93,6 @@ with st.sidebar:
         if sd.last_loaded_nm != sd.target_nm:
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
             sd["v_reg"], sd["v_cat"], sd["v_nm"] = row['지역'], row['구분'], row['이름']
-            # 수정 모드 진입 시 마커 클릭 좌표가 없으면 시설 좌표 사용
             if not sd.t_la: sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
             for s in SL: sd[f"ch_{s}"] = str(row[s])
             sd.last_loaded_nm = sd.target_nm
@@ -172,38 +171,38 @@ for _, r in disp_df.iterrows():
                 {r["이름"]}
             </div>
         '''
-        # 마커 추가
+        # v104 핵심: 마커 클릭 시 감도를 위해 툴팁(Tooltip) 추가 및 이름 정보 매핑
         folium.Marker(p, icon=folium.DivIcon(html=label_html, icon_anchor=(0,0))).add_to(m)
-        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
+        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), tooltip=r['이름']).add_to(m)
     except: pass
 
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
 # 지도 출력
-map_data = st_folium(m, width="100%", height=700, key=f"map_v103_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v104_{sd.map_key}")
 
-# [v103 핵심 로직] 마커 클릭 시 정보 로딩
-if map_data.get("last_object_clicked"):
-    cla = map_data["last_object_clicked"]["lat"]
-    clo = map_data["last_object_clicked"]["lng"]
-    # 지도에서 클릭한 마커와 일치하는 시설 찾기 (소수점 5자리까지 비교)
+# [v104 지능형 클릭 매칭 로직]
+click_obj = map_data.get("last_object_clicked")
+click_bg = map_data.get("last_clicked")
+
+if click_obj:
+    cla, clo = click_obj["lat"], click_obj["lng"]
+    # 오차 범위(epsilon)를 두어 근처의 마커를 찾음 (소수점 4자리까지 허용)
     match = disp_df[
-        (disp_df['위도'].astype(float).round(5) == round(cla, 5)) & 
-        (disp_df['경도'].astype(float).round(5) == round(clo, 5))
+        (disp_df['위도'].astype(float).sub(cla).abs() < 0.0005) & 
+        (disp_df['경도'].astype(float).sub(clo).abs() < 0.0005)
     ]
     if not match.empty:
         sel_row = match.iloc[0]
         if sd.target_nm != sel_row['이름']:
-            sd.m_mode = "정보 수정"
-            sd.target_nm = sel_row['이름']
-            sd.center = [cla, clo]
-            sd.t_la, sd.t_lo = None, None # 마커 클릭 시 검색 마커는 제거
+            sd.m_mode, sd.target_nm = "정보 수정", sel_row['이름']
+            sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
+            sd.t_la, sd.t_lo = None, None
             sd.map_key += 1; st.rerun()
 
-# 배경 클릭 시 신규 등록 좌표 획득
-elif map_data.get("last_clicked"):
-    cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
+elif click_bg:
+    cla, clo = click_bg["lat"], click_bg["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo; st.rerun()
 
