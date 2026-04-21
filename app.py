@@ -46,7 +46,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v45_mgr")
+        g = Nominatim(user_agent="v46_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -86,7 +86,7 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [3] 지도 기본 설정 (위성+도로 고정)
+# [3] 지도 설정 (위성+도로 고정)
 ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}'
 ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
@@ -97,8 +97,7 @@ folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도', overlay=False).add_
 folium.LayerControl().add_to(m)
 
 if my_p:
-    ic = folium.Icon(color='orange', icon='person')
-    folium.Marker(my_p, icon=ic).add_to(m)
+    folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
 
 for _, r in sd.df.iterrows():
     try:
@@ -107,8 +106,33 @@ for _, r in sd.df.iterrows():
         d = ""
         if my_p:
             dist = round(geodesic(my_p, p).km, 2)
-            d = f"<br>📏 {dist}km"
+            d = "<br>📏 " + str(dist) + "km"
         
-        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
-        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
-        txt = f"<b>[{
+        dt = " | ".join([str(s)+":"+str(r[s]) for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
+        uh = " | ".join([str(s)+":"+str(r[s]) for s in SL if "(U)" in s and str(r[s]).strip() != ""])
+        
+        # 필터링 에러를 막기 위해 특수문자 조합 방식을 평범하게 변경함
+        p1 = "<b>[" + str(r['구분']) + "] " + str(r['이름']) + "</b><br>"
+        p2 = "DTV: " + dt + "<br>UHD: " + uh + d
+        txt = p1 + p2
+        
+        ic2 = folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')
+        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=ic2).add_to(m)
+    except:
+        pass
+
+if sd.t_la:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
+
+# 800px 사이즈
+res = st_folium(m, width="100%", height=800, key="map_v46")
+
+if res and res.get('last_clicked'):
+    lc = res['last_clicked']
+    la = round(lc['lat'], 6)
+    lo = round(lc['lng'], 6)
+    if sd.t_la != la:
+        sd.t_la, sd.t_lo = la, lo
+        st.rerun()
+
+st.dataframe(sd.df, use_container_width=True)
