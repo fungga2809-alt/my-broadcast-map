@@ -119,7 +119,7 @@ with st.sidebar:
             sd.t_la, sd.t_lo = None, None; st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도 출력 (글자 색상 커스텀 적용)
+# [3] 본문: 지도 출력
 # ---------------------------------------------------------
 st.markdown(f"### 📡 {sd.sel_reg} 방송 인프라 마스터")
 
@@ -133,45 +133,43 @@ if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).ad
 for _, r in disp_df.iterrows():
     try:
         p = [float(r['위도']), float(r['경도'])]
-        # [변경] 송신소=red, 중계소=blue로 색상값 할당
         color_code = '#FF0000' if r['구분'] == '송신소' else '#0000FF'
         marker_color = 'red' if r['구분'] == '송신소' else 'blue'
         
-        # 팝업 내 글자 색상 적용 (HTML)
-        popup_html = f"""
-        <div style="font-family: 'Malgun Gothic'; width: 200px;">
-            <b style="color:{color_code}; font-size: 14px;">[{r['구분']}] {r['이름']}</b><br>
-            <hr style="margin: 5px 0;">
-            <span style="font-size: 12px;">DTV: {r['KBS1']} | {r['MBC']} | {r['SBS']}</span>
-        </div>
-        """
-        
-        # 지도 위에 이름표(라벨)를 항상 띄우기 (DivIcon 활용)
+        # 지도 위 고정 라벨
         folium.Marker(
             p,
             icon=folium.DivIcon(
                 icon_anchor=(0, 0),
-                html=f'<div style="font-size: 10pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.7); padding: 2px; border-radius: 3px; border: 1px solid {color_code}; width: max-content;">{r['이름']}</div>',
+                html=f'<div style="font-size: 10pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 4px; border-radius: 3px; border: 1px solid {color_code}; white-space: nowrap;">{r["이름"]}</div>',
             )
         ).add_to(m)
         
-        # 기본 마커 아이콘
         folium.Marker(
             p, 
-            popup=folium.Popup(popup_html, max_width=300), 
+            popup=folium.Popup(f"[{r['구분']}] {r['이름']}", max_width=200), 
             icon=folium.Icon(color=marker_color, icon='tower-broadcast', prefix='fa')
         ).add_to(m)
     except: pass
 
-if sd.t_la: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
-
-st_folium(m, width="100%", height=600, key=f"map_v78_{sd.map_key}")
+st_folium(m, width="100%", height=600, key=f"map_v79_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 상세 목록
+# [4] 하단: 데이터 관리 현황 (색상 구분 타이틀 적용)
 # ---------------------------------------------------------
 st.divider()
-event = st.dataframe(disp_df[CL], use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+# [수정] 타이틀 복구 및 색상 구분 적용
+st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
+st.info("💡 아래 표에서 시설을 클릭하면 해당 위치로 지도가 즉시 이동합니다.")
+
+event = st.dataframe(
+    disp_df[CL], 
+    use_container_width=True, 
+    on_select="rerun", 
+    selection_mode="single-row", 
+    hide_index=True, 
+    key="main_table"
+)
 
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
@@ -183,5 +181,4 @@ if event and event.get("selection", {}).get("rows"):
             sd.map_key += 1; st.rerun()
     except: pass
 
-csv_data = sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-st.download_button(label="📥 전체 데이터 CSV 백업", data=csv_data, file_name='stations.csv', mime='text/csv')
+st.download_button(label="📥 전체 데이터 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv', mime='text/csv')
