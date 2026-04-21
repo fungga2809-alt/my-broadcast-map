@@ -7,36 +7,37 @@ import os
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
 
-# [1] 초기화 및 설정
+# [1] 설정
 st.set_page_config(page_title="Broadcasting Master", layout="wide")
 DB = 'stations.csv'
 SL = ['SBS','SBS(U)','KBS2','KBS2(U)','KBS1','KBS1(U)','EBS','EBS(U)','MBC','MBC(U)']
 CL = ['구분','이름'] + SL + ['위도','경도','메모']
 
-if 'df' not in st.session_state:
+sd = st.session_state
+if 'df' not in sd:
     if os.path.exists(DB):
         try:
-            st.session_state.df = pd.read_csv(DB)
-            if '구분' not in st.session_state.df.columns:
-                st.session_state.df.insert(0, '구분', '중계소')
+            sd.df = pd.read_csv(DB)
+            if '구분' not in sd.df.columns:
+                sd.df.insert(0, '구분', '중계소')
             for c in CL:
-                if c not in st.session_state.df.columns: st.session_state.df[c] = ""
-        except: st.session_state.df = pd.DataFrame(columns=CL)
-    else: st.session_state.df = pd.DataFrame(columns=CL)
+                if c not in sd.df.columns: sd.df[c] = ""
+        except: sd.df = pd.DataFrame(columns=CL)
+    else: sd.df = pd.DataFrame(columns=CL)
 
-sd = st.session_state
 if 'center' not in sd: sd.center = [35.1796, 129.0756]
 if 't_la' not in sd: sd.t_la = None
 if 't_lo' not in sd: sd.t_lo = None
 
 st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 
-# [2] 사이드바 도구
+# [2] 사이드바
 with st.sidebar:
     st.header("⚙️ 도구")
     gps = get_geolocation()
-    my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps else None
-    if my_p:
+    my_p = None
+    if gps and 'coords' in gps:
+        my_p = [gps['coords']['latitude'], gps['coords']['longitude']]
         st.success("📍 GPS 연결됨")
         if st.button("🎯 내 위치로"):
             sd.center = my_p
@@ -45,7 +46,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v44_mgr")
+        g = Nominatim(user_agent="v45_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -58,7 +59,8 @@ with st.sidebar:
     nm = st.text_input("시설 명칭")
     la_v = sd.t_la if sd.t_la else sd.center[0]
     lo_v = sd.t_lo if sd.t_lo else sd.center[1]
-    fla, flo = st.number_input("위도", value=float(la_v)), st.number_input("경도", value=float(lo_v))
+    fla = st.number_input("위도", value=float(la_v), format="%.6f")
+    flo = st.number_input("경도", value=float(lo_v), format="%.6f")
 
     chs = {}
     st.write("📺 채널 (DTV | UHD)")
@@ -70,7 +72,8 @@ with st.sidebar:
     if st.button("✅ 저장"):
         if nm:
             v = [cat, nm] + [chs[s] for s in SL] + [fla, flo, ""]
-            sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+            new_df = pd.DataFrame([v], columns=CL)
+            sd.df = pd.concat([sd.df, new_df], ignore_index=True)
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             sd.t_la = None
             st.rerun()
@@ -83,18 +86,29 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [3] 지도 설정 (핵심 수정 부분)
-ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' # 위성 + 도로
-ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' # 순수 위성
-ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}' # 일반 지도
+# [3] 지도 기본 설정 (위성+도로 고정)
+ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
+ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}'
+ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
-# 지도를 생성할 때 tiles 인자에 '위성+도로' 주소를 바로 넣어서 기본값으로 고정합니다.
-m = folium.Map(location=sd.center, zoom_start=14, tiles=ly_y, attr='Google')
-
-# 추가 선택 옵션들 (LayerControl용)
-folium.TileLayer(tiles=ly_s, attr='Google', name='순수 위성', overlay=False).add_to(m)
-folium.TileLayer(tiles=ly_m, attr='Google', name='일반 지도', overlay=False).add_to(m)
+m = folium.Map(location=sd.center, zoom_start=14, tiles=ly_y, attr='G')
+folium.TileLayer(tiles=ly_s, attr='G', name='순수 위성', overlay=False).add_to(m)
+folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도', overlay=False).add_to(m)
 folium.LayerControl().add_to(m)
 
 if my_p:
-    folium.Marker(my_p, icon
+    ic = folium.Icon(color='orange', icon='person')
+    folium.Marker(my_p, icon=ic).add_to(m)
+
+for _, r in sd.df.iterrows():
+    try:
+        p = [float(r['위도']), float(r['경도'])]
+        clr = 'red' if r['구분'] == '송신소' else 'blue'
+        d = ""
+        if my_p:
+            dist = round(geodesic(my_p, p).km, 2)
+            d = f"<br>📏 {dist}km"
+        
+        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
+        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
+        txt = f"<b>[{
