@@ -19,21 +19,16 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '메모']
 
 sd = st.session_state
 
-# [1] 데이터 로드 로직 보강 (KeyError 방지)
+# [1] 데이터 로드 로직
 def load_data():
     try:
-        # 깃허브에서 최신 파일을 읽어옵니다.
         df = pd.read_csv(DB, dtype=str).fillna("")
-        # 만약 '지역' 컬럼이 없으면 맨 앞에 빈 칸으로 생성합니다.
-        if '지역' not in df.columns:
-            df.insert(0, '지역', '미지정')
-        # 정해진 컬럼 순서(CL)대로 다시 정렬합니다.
+        if '지역' not in df.columns: df.insert(0, '지역', '미지정')
         df = df.reindex(columns=CL, fill_value="")
         return df
     except:
         return pd.DataFrame(columns=CL, dtype=str)
 
-# 앱 시작 시 또는 데이터가 없을 때 로드
 if 'df' not in sd or '지역' not in sd.df.columns:
     sd.df = load_data()
 
@@ -51,22 +46,31 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
+def parse_dms(dms_str):
+    try:
+        pattern = r"(\d+)°(\d+)'([\d.]+)\"([NSEW])"
+        parts = re.findall(pattern, dms_str)
+        if len(parts) != 2: return None, None
+        results = []
+        for d, m, s, h in parts:
+            dd = float(d) + float(m)/60 + float(s)/3600
+            if h in ['S', 'W']: dd = -dd
+            results.append(round(dd, 6))
+        return results[0], results[1]
+    except: return None, None
+
 # ---------------------------------------------------------
-# [2] 사이드바: 지역 필터 및 도구
+# [2] 사이드바: 제어 도구
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 전국 지역 필터")
     
-    # [수정] 데이터가 비어있을 때를 대비한 지역 목록 추출
     if not sd.df.empty:
         regs = ["전체"] + sorted(sd.df['지역'].unique().tolist())
     else:
         regs = ["전체"]
     
-    # 현재 선택된 지역이 목록에 없으면 '전체'로 초기화
-    if sd.sel_reg not in regs:
-        sd.sel_reg = "전체"
-        
+    if sd.sel_reg not in regs: sd.sel_reg = "전체"
     new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg))
     
     if new_reg != sd.sel_reg:
@@ -90,8 +94,22 @@ with st.sidebar:
             sd.t_la, sd.t_lo = None, None; st.rerun()
 
     st.divider()
+    sq = st.text_input("🔍 주소/DMS 검색")
+    if st.button("찾기"):
+        d_la, d_lo = parse_dms(sq)
+        if d_la and d_lo:
+            sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]
+            sd.map_key += 1; st.rerun()
+        else:
+            try:
+                l = Nominatim(user_agent="v76_mgr").geocode(sq)
+                if l: 
+                    sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
+                    sd.map_key += 1; st.rerun()
+            except: st.error("검색 결과가 없습니다.")
+
+    st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
-    
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     target_nm = st.selectbox("수정 대상 선택", f_df['이름'].tolist()) if m_mode == "정보 수정" and not f_df.empty else None
         
@@ -108,15 +126,17 @@ with st.sidebar:
             for s in SL: sd[f"i_{s}"] = ""
         sd.last_mode, sd.last_target = m_mode, target_nm
 
-    st.text_input("지역 (예: 부산광역시)", key="i_reg")
+    st.text_input("지역", key="i_reg")
     st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     st.text_input("시설 명칭", key="i_nm")
-    la_val = sd.t_la if sd.t_la else sd.get("i_la_fixed", sd.center[0])
-    lo_val = sd.t_lo if sd.t_lo else sd.get("i_lo_fixed", sd.center[1])
+    la_val, lo_val = sd.t_la if sd.t_la else sd.get("i_la_fixed", sd.center[0]), sd.t_lo if sd.t_lo else sd.get("i_lo_fixed", sd.center[1])
     fla, flo = st.number_input("위도", value=float(la_val), format="%.6f"), st.number_input("경도", value=float(lo_val), format="%.6f")
 
     st.write("📺 **채널 정보**")
-    for s in SL: st.text_input(s, key=f"i_{s}")
+    dtv_c = st.columns(3)
+    for i, s in enumerate(SL_DTV): dtv_c[i%3].text_input(s, key=f"i_{s}")
+    uhd_c = st.columns(3)
+    for i, s in enumerate(SL_UHD): uhd_c[i%3].text_input(s, key=f"i_{s}")
 
     if st.button("✅ 데이터 저장"):
         if sd["i_nm"]:
@@ -130,13 +150,39 @@ with st.sidebar:
             sd.t_la, sd.t_lo = None, None; st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 리스트 및 지도 (순서 최적화)
+# [3] 본문: 지도 우선 출력 (상단 배치)
 # ---------------------------------------------------------
 st.markdown(f"### 📡 {sd.sel_reg} 방송 인프라 마스터")
 
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-# 리스트 출력 및 선택 이벤트
+ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
+m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
+
+if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+for _, r in disp_df.iterrows():
+    try:
+        p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
+        txt = f"<b>[{r['지역']}] {r['이름']}</b>"
+        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
+    except: pass
+if sd.t_la: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
+
+# 지도를 먼저 렌더링합니다.
+res = st_folium(m, width="100%", height=600, key=f"map_v76_{sd.map_key}")
+
+if res and res.get('last_clicked'):
+    la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
+    if sd.t_la != la: 
+        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]
+        sd.map_key += 1; st.rerun()
+
+# ---------------------------------------------------------
+# [4] 하단: 리스트 출력 및 선택 동기화
+# ---------------------------------------------------------
+st.divider()
+st.subheader("📊 시설 목록 (클릭 시 해당 위치로 지도 이동)")
+
 event = st.dataframe(
     disp_df[CL], 
     use_container_width=True, 
@@ -146,6 +192,7 @@ event = st.dataframe(
     key="main_table"
 )
 
+# 표에서 선택 시 지도 점프 로직
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
@@ -158,20 +205,5 @@ if event and event.get("selection", {}).get("rows"):
             st.rerun()
     except: pass
 
-# 지도 출력
-ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
-m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
-
-for _, r in disp_df.iterrows():
-    try:
-        p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        folium.Marker(p, popup=folium.Popup(f"[{r['지역']}] {r['이름']}", max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
-    except: pass
-
-if sd.t_la: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
-
-st_folium(m, width="100%", height=600, key=f"map_v75_{sd.map_key}")
-
-# 백업 다운로드
 csv_data = sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 st.download_button(label="📥 전체 데이터 CSV 백업", data=csv_data, file_name='stations.csv', mime='text/csv')
