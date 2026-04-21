@@ -28,7 +28,7 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# 세션 상태 초기화 (v105 핵심: 연동성 강화)
+# 세션 상태 초기화
 defaults = {
     'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
@@ -59,12 +59,13 @@ with st.sidebar:
     regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
     sd.sel_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
 
+    # 주소 검색
     st.subheader("🔍 주소/지명 검색")
     search_addr = st.text_input("검색할 주소 또는 건물명", key="addr_input")
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v105")
+                geolocator = Nominatim(user_agent="broadcasting_master_v106")
                 location = geolocator.geocode(search_addr)
                 if location:
                     sd.center = [location.latitude, location.longitude]
@@ -88,17 +89,18 @@ with st.sidebar:
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
     
-    # [v105 핵심] 정보 로딩 로직: 수정 모드일 때 세션에 값 고정
+    # [합법적 데이터 주입 로직] 위젯이 그려지기 전에 세션값을 미리 채움 (에러 방지)
     if sd.m_mode == "정보 수정" and names:
         target_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
         sd.target_nm = st.selectbox("관리 대상 선택", names, index=target_idx)
         
-        # 시설이 바뀌었을 때만 채널 정보 다시 로드
+        # 선택된 시설이 바뀌었을 때만 로드
         if sd.last_loaded_nm != sd.target_nm:
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
             sd["v_reg"], sd["v_cat"], sd["v_nm"] = row['지역'], row['구분'], row['이름']
-            # 좌표는 마커 클릭 좌표가 없으면 시설 좌표 사용
+            # 마커 클릭으로 넘어온 좌표가 없을 때만 원본 좌표 사용
             if not sd.t_la: sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
+            # 채널 데이터 주입 (입력창 그리기 전이라 안전함)
             for s in SL: sd[f"ch_{s}"] = str(row[s])
             sd.last_loaded_nm = sd.target_nm
     else:
@@ -117,7 +119,7 @@ with st.sidebar:
     final_lo = st.number_input("경도", value=float(sd.t_lo if sd.t_lo else sd.center[1]), format="%.6f", key="inp_lo")
     sd.t_la, sd.t_lo = final_la, final_lo
 
-    st.subheader("📺 물리 채널 정보")
+    st.subheader("📺 채널 정보 (그룹화)")
     st.info("📡 **DTV 채널**")
     dtv_cols = st.columns(3)
     for i, s in enumerate(SL_DTV): dtv_cols[i%3].text_input(s, key=f"ch_{s}")
@@ -139,34 +141,18 @@ with st.sidebar:
             sd.t_la, sd.t_lo, sd.target_nm, sd.last_loaded_nm = None, None, None, None
             st.success("저장 완료!"); st.rerun()
 
-    st.divider()
-    del_target = st.selectbox("삭제 시설 선택", ["선택 안 함"] + sd.df['이름'].tolist(), key="del_box")
-    if st.button("🚨 시설 삭제"):
-        if del_target != "선택 안 함":
-            sd.history.append(sd.df.copy())
-            sd.df = sd.df[sd.df['이름'] != del_target]
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
-
 # ---------------------------------------------------------
 # [3] 본문: 지도 및 데이터 관리
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-
 m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        
-        label_html = f'''
-            <div style="display: inline-block; padding: 4px 10px; background-color: white; border: 2px solid {color}; border-radius: 6px;
-                color: {color}; font-size: 10pt; font-weight: bold; white-space: nowrap; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-                transform: translate(10px, -45px);">
-                {r["이름"]}
-            </div>
-        '''
+        label_html = f'''<div style="display: inline-block; padding: 4px 10px; background-color: white; border: 2px solid {color}; border-radius: 6px; color: {color}; font-size: 10pt; font-weight: bold; white-space: nowrap; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); transform: translate(10px, -45px);">{r["이름"]}</div>'''
         folium.Marker(p, icon=folium.DivIcon(html=label_html, icon_anchor=(0,0))).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), tooltip=r['이름']).add_to(m)
     except: pass
@@ -174,54 +160,41 @@ for _, r in disp_df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-# 지도 출력
-map_data = st_folium(m, width="100%", height=700, key=f"map_v105_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v106_{sd.map_key}")
 
-# [v105 하이라이트] 마커 클릭 시 사이드바에 채널 데이터 '강제 주입'
+# [v106 안전한 마커 클릭 로직] 직접 주입하지 않고 신호만 보냄
 if map_data.get("last_object_clicked"):
-    cla = map_data["last_object_clicked"]["lat"]
-    clo = map_data["last_object_clicked"]["lng"]
-    # 0.0005 이내 오차 범위로 시설 검색
-    match = disp_df[
-        (disp_df['위도'].astype(float).sub(cla).abs() < 0.0005) & 
-        (disp_df['경도'].astype(float).sub(clo).abs() < 0.0005)
-    ]
+    cla, clo = map_data["last_object_clicked"]["lat"], map_data["last_object_clicked"]["lng"]
+    match = disp_df[(disp_df['위도'].astype(float).sub(cla).abs() < 0.0005) & (disp_df['경도'].astype(float).sub(clo).abs() < 0.0005)]
     if not match.empty:
         sel_row = match.iloc[0]
-        # 1. 모드와 타겟 이름 설정
-        sd.m_mode = "정보 수정"
-        sd.target_nm = sel_row['이름']
-        sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
-        
-        # 2. [핵심] 사이드바 입력창에 채널 값 강제 주입
-        for s in SL:
-            sd[f"ch_{s}"] = str(sel_row[s])
-        
-        # 3. 로딩 상태 초기화 및 맵 갱신
-        sd.last_loaded_nm = sel_row['이름']
-        sd.t_la, sd.t_lo = None, None
-        sd.map_key += 1; st.rerun()
+        if sd.target_nm != sel_row['이름']:
+            sd.m_mode, sd.target_nm = "정보 수정", sel_row['이름']
+            sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
+            sd.last_loaded_nm = None # 👈 이 신호가 사이드바 로직을 깨워 데이터를 로드하게 합니다!
+            sd.t_la, sd.t_lo = None, None
+            sd.map_key += 1; st.rerun()
 
-# 배경 클릭 시 신규 좌표 획득
 elif map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo; st.rerun()
 
 st.divider()
-st.markdown(f"### 📊 데이터 관리 현황", unsafe_allow_html=True)
-# ... 하단 표 로직 (기존 동일)
+# ... (하단 표 및 백업 버튼 로직 동일)
 cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
 def style_row(row):
     color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
     return [color for _ in row]
 styled_df = disp_df[CL].style.apply(style_row, axis=1)
 event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, column_config=cfg, key="main_table")
+
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
     if sd.target_nm != sel_row['이름']:
         sd.center, sd.m_mode, sd.target_nm = [float(sel_row['위도']), float(sel_row['경도'])], "정보 수정", sel_row['이름']
+        sd.last_loaded_nm = None # 표 클릭 시에도 안전하게 로드 트리거
         sd.map_key += 1; st.rerun()
 
 st.download_button(label="📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
