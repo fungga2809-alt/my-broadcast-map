@@ -28,10 +28,10 @@ if 'df' not in sd:
     except:
         sd.df = pd.DataFrame(columns=CL, dtype=str)
 
-# 세션 상태 초기화 (map_jump 변수 추가)
+# 세션 상태 초기화
 defaults = {'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
             'layer': "위성+도로", 'last_target': None, 'last_mode': "새로 등록", 
-            'history': [], 'map_jump': 0}
+            'history': [], 'map_key': "init"}
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 
@@ -67,7 +67,7 @@ with st.sidebar:
     if btn_col1.button("🎯 내 위치"):
         if my_p: 
             sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]
-            sd.map_jump += 1
+            sd.map_key = f"gps_{my_p[0]}"
             st.rerun()
         
     if btn_col2.button("↩️ 되돌리기"):
@@ -85,14 +85,14 @@ with st.sidebar:
         d_la, d_lo = parse_dms(sq)
         if d_la and d_lo:
             sd.t_la, sd.t_lo, sd.center = d_la, d_lo, [d_la, d_lo]
-            sd.map_jump += 1
+            sd.map_key = f"search_{d_la}"
             st.rerun()
         else:
             try:
-                l = Nominatim(user_agent="v70_mgr").geocode(sq)
+                l = Nominatim(user_agent="v71_mgr").geocode(sq)
                 if l: 
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
-                    sd.map_jump += 1
+                    sd.map_key = f"search_{l.latitude}"
                     st.rerun()
             except: st.error("검색 결과가 없습니다.")
 
@@ -122,7 +122,6 @@ with st.sidebar:
     curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
     fla, flo = st.number_input("위도", value=float(curr_la), format="%.6f"), st.number_input("경도", value=float(curr_lo), format="%.6f")
 
-    st.divider()
     st.write("📺 **DTV 채널 (디지털)**")
     dtv_cols = st.columns(3)
     for idx, s in enumerate(SL_DTV): dtv_cols[idx % 3].text_input(s, key=f"i_{s}")
@@ -153,11 +152,9 @@ ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "
      'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
      'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
 
-# [핵심] 지도가 강제로 움직이게 하기 위해 key에 map_jump 변수를 포함합니다.
-m_key = f"map_render_{sd.map_jump}"
 m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
-
 if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+
 for _, r in sd.df.iterrows():
     try:
         p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
@@ -170,20 +167,24 @@ for _, r in sd.df.iterrows():
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
 
-res = st_folium(m, width="100%", height=800, key=m_key)
+# [핵심] 지도의 key를 세션의 map_key와 동기화하여 강제 갱신을 유도합니다.
+res = st_folium(m, width="100%", height=800, key=f"map_{sd.map_key}")
 
 if res and res.get('last_clicked'):
     la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
-    if sd.t_la != la: sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
+    if sd.t_la != la: 
+        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]
+        sd.map_key = f"click_{la}" # 클릭 시에도 키를 변경하여 상태 고착 방지
+        st.rerun()
 
-# [4] 하단 데이터 관리 및 클릭 동기화
+# [4] 하단 데이터 관리 및 클릭 동기화 로직
 st.divider()
 c1, c2 = st.columns([8, 2])
 c1.subheader("📊 데이터 관리 현황")
 csv_data = sd.df[CL].to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 c2.download_button(label="📥 최신 CSV 받기", data=csv_data, file_name='stations.csv', mime='text/csv')
 
-# 표 선택 이벤트 감지
+# 도표 출력 (on_select 활성화)
 event = st.dataframe(
     sd.df[CL], 
     use_container_width=True, 
@@ -192,15 +193,17 @@ event = st.dataframe(
     hide_index=True
 )
 
-# [점프 로직] 표에서 행이 선택되면 좌표를 업데이트하고 맵 점프 카운트를 올립니다.
+# [점프 로직] 표에서 줄을 선택하면 해당 시설의 이름을 따서 지도의 Key를 바꿔버립니다.
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = sd.df.iloc[idx]
     try:
         new_la, new_lo = float(sel_row['위도']), float(sel_row['경도'])
+        nm = sel_row['이름']
+        # 현재 중심점과 다르면 강제 이동 실행
         if sd.center != [new_la, new_lo]:
             sd.center = [new_la, new_lo]
             sd.t_la, sd.t_lo = new_la, new_lo
-            sd.map_jump += 1 # 맵 키를 변경하여 강제 점프 유도
+            sd.map_key = f"jump_{nm}" # 시설 이름을 키에 포함하여 강제 리프레시!
             st.rerun()
     except: pass
