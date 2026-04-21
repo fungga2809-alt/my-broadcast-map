@@ -7,10 +7,9 @@ import os
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
 
-# [1] 기본 설정
+# [1] 기본 설정 (와이드 레이아웃)
 st.set_page_config(page_title="Broadcasting Map", layout="wide")
 DB = 'stations.csv'
-# DTV와 UHD를 짝지어 리스트 구성
 SL = ['SBS','SBS(U)','KBS2','KBS2(U)','KBS1','KBS1(U)','EBS','EBS(U)','MBC','MBC(U)']
 CL = ['구분','이름'] + SL + ['위도','경도','메모']
 
@@ -31,7 +30,8 @@ if 'center' not in sd: sd.center = [35.1796, 129.0756]
 if 't_la' not in sd: sd.t_la = None
 if 't_lo' not in sd: sd.t_lo = None
 
-st.title("📡 시설 관리 시스템 v36")
+# 요청하신 제목으로 변경
+st.markdown("## 📡 송/중계소 등록")
 
 # [3] 사이드바 도구
 with st.sidebar:
@@ -48,7 +48,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v36_mgr")
+        g = Nominatim(user_agent="v37_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -65,7 +65,6 @@ with st.sidebar:
     fla = st.number_input("위도", value=float(la_v), format="%.6f")
     flo = st.number_input("경도", value=float(lo_v), format="%.6f")
 
-    # --- [요청하신 채널 2열 배치 부분] ---
     chs = {}
     st.write("📺 채널 (DTV | UHD)")
     for i in range(0, len(SL), 2):
@@ -91,6 +90,7 @@ with st.sidebar:
             st.rerun()
 
 # [4] 지도 설정
+# 전문가님 요청으로 지도 크기를 대폭 키움 (가로 100%, 세로 800)
 m = folium.Map(location=sd.center, zoom_start=14)
 ly1 = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 folium.TileLayer(tiles=ly1, attr='G', name='Satellite').add_to(m)
@@ -104,7 +104,6 @@ for _, r in sd.df.iterrows():
         clr = 'red' if r['구분'] == '송신소' else 'blue'
         d_km = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
         
-        # 팝업 정보 구성
         dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
         uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
         txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d_km}"
@@ -116,8 +115,8 @@ for _, r in sd.df.iterrows():
 if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
-# 지도 출력
-res = st_folium(m, width=700, height=500, key="map_v36")
+# 지도 출력 (width="100%", height=800으로 확대)
+res = st_folium(m, width="100%", height=800, key="map_v37_large")
 
 if res and res.get('last_clicked'):
     lc = res['last_clicked']
