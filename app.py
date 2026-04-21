@@ -123,4 +123,33 @@ with st.sidebar:
             st.rerun()
 
 # [3] 지도 출력
-ly = '
+ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위성+도로" else \
+     'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
+     'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
+
+m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
+if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+
+for _, r in sd.df.iterrows():
+    try:
+        p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
+        d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
+        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
+        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
+        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d}"
+        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
+    except: pass
+
+if sd.t_la:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
+
+res = st_folium(m, width="100%", height=800, key="map_v57")
+
+# 지도 클릭 시 좌표만 갱신 (채널 입력값은 세션에 보존됨)
+if res and res.get('last_clicked'):
+    la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
+    if sd.t_la != la:
+        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]
+        st.rerun()
+
+st.dataframe(sd.df, use_container_width=True)
