@@ -30,7 +30,7 @@ if 'center' not in sd: sd.center = [35.1796, 129.0756]
 if 't_la' not in sd: sd.t_la = None
 if 't_lo' not in sd: sd.t_lo = None
 
-# 요청하신 제목으로 변경
+# 제목 변경
 st.markdown("## 📡 송/중계소 등록")
 
 # [3] 사이드바 도구
@@ -48,7 +48,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v38_mgr")
+        g = Nominatim(user_agent="v39_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -85,7 +85,7 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [4] 지도 설정 (높이 600px로 최적화)
+# [4] 지도 설정 (세로 500px로 최적화)
 m = folium.Map(location=sd.center, zoom_start=14)
 ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
 folium.TileLayer(tiles=ly, attr='G', name='Satellite').add_to(m)
@@ -103,3 +103,7 @@ for _, r in sd.df.iterrows():
         txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d_km}"
         folium.Marker(p, popup=folium.Popup(txt, max_width=300), 
                       icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
+    except: pass
+
+if sd.t_la:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
