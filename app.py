@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from geopy.distance import geodesic
-import os
 import re
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
@@ -46,38 +44,35 @@ def save_history():
     sd.history.append(sd.df.copy())
     if len(sd.history) > 10: sd.history.pop(0)
 
-# [강력한 CSS 주입] 앱 전체의 기본 폰트와 표의 가시성 대폭 향상
+# [CSS 주입] 
+# 사이드바는 16px로 눈이 편안하게, 표 헤더는 18px로 중앙 정렬!
 st.markdown("""
     <style>
-    /* 앱 전체 폰트 크기 업그레이드 */
+    /* 전체 앱 기본 폰트 (사이드바 포함) */
     html, body, [class*="css"] {
-        font-size: 18px !important;
+        font-size: 16px !important;
     }
-    /* 표 헤더 글자 크기 및 중앙 정렬 */
+    /* 표 상단 제목(헤더) 중앙 정렬 및 크기 */
     th {
-        font-size: 20px !important;
+        font-size: 18px !important;
         text-align: center !important;
     }
-    /* 사이드바 입력창 폰트 조절 */
-    .stTextInput input {
-        font-size: 18px !important;
+    /* 데이터프레임 셀 내용 정렬 보조 */
+    [data-testid="stDataFrame"] td {
+        vertical-align: middle !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: 지역 필터 및 제어 도구
+# [2] 사이드바: 도구 및 필터
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 지역 및 도구")
     
-    if not sd.df.empty:
-        regs = ["전체"] + sorted(sd.df['지역'].unique().tolist())
-    else:
-        regs = ["전체"]
-    
-    if sd.sel_reg not in regs: sd.sel_reg = "전체"
-    new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg))
+    # 지역 필터
+    regs = ["전체"] + sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else ["전체"]
+    new_reg = st.selectbox("🗺️ 관리 지역 선택", regs, index=regs.index(sd.sel_reg) if sd.sel_reg in regs else 0)
     
     if new_reg != sd.sel_reg:
         sd.sel_reg = new_reg
@@ -90,14 +85,11 @@ with st.sidebar:
     btn_col1, btn_col2 = st.columns(2)
     gps = get_geolocation()
     my_p = [gps['coords']['latitude'], gps['coords']['longitude']] if gps and 'coords' in gps else None
-    
     if btn_col1.button("🎯 내 위치"):
         if my_p: sd.center, sd.t_la, sd.t_lo = my_p, my_p[0], my_p[1]; sd.map_key += 1; st.rerun()
-        
     if btn_col2.button("↩️ 되돌리기"):
         if sd.history:
-            sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo = None, None; st.rerun()
+            sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
     m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
@@ -108,9 +100,8 @@ with st.sidebar:
         if m_mode == "정보 수정" and target_nm:
             row = sd.df[sd.df['이름'] == target_nm].iloc[0]
             sd["i_reg"], sd["i_cat"], sd["i_nm"] = row['지역'], row['구분'], row['이름']
-            sd["i_la_fixed"], sd["i_lo_fixed"] = float(row['위도']), float(row['경도'])
             for s in SL: sd[f"i_{s}"] = str(row[s])
-            sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]]
+            sd.center = [float(row['위도']), float(row['경도'])]
         else:
             sd["i_reg"] = sd.sel_reg if sd.sel_reg != "전체" else "부산광역시"
             sd["i_cat"], sd["i_nm"] = "중계소", ""
@@ -120,7 +111,7 @@ with st.sidebar:
     st.text_input("지역", key="i_reg")
     st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
     st.text_input("시설 명칭", key="i_nm")
-    la_val, lo_val = sd.t_la if sd.t_la else sd.get("i_la_fixed", sd.center[0]), sd.t_lo if sd.t_lo else sd.get("i_lo_fixed", sd.center[1])
+    la_val, lo_val = sd.t_la if sd.t_la else sd.center[0], sd.t_lo if sd.t_lo else sd.center[1]
     fla, flo = st.number_input("위도", value=float(la_val), format="%.6f"), st.number_input("경도", value=float(lo_val), format="%.6f")
 
     st.write("📺 **채널 정보**")
@@ -134,8 +125,7 @@ with st.sidebar:
                 idx = sd.df[sd.df['이름'] == target_nm].index[0]; sd.df.loc[idx] = v
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-            sd.t_la, sd.t_lo = None, None; st.rerun()
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
 # ---------------------------------------------------------
 # [3] 본문: 지도 출력
@@ -143,51 +133,49 @@ with st.sidebar:
 st.markdown(f"### 📡 {sd.sel_reg} 방송 인프라 마스터")
 
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-
-ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
-m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
-
-if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
     try:
         p = [float(r['위도']), float(r['경도'])]
         color_code = '#FF0000' if r['구분'] == '송신소' else '#0000FF'
-        marker_color = 'red' if r['구분'] == '송신소' else 'blue'
-        
-        folium.Marker(
-            p,
-            icon=folium.DivIcon(
-                icon_anchor=(0, 0),
-                html=f'<div style="font-size: 11pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; border: 1px solid {color_code}; white-space: nowrap;">{r["이름"]}</div>',
-            )
-        ).add_to(m)
-        
-        folium.Marker(
-            p, 
-            popup=folium.Popup(f"[{r['구분']}] {r['이름']}", max_width=200), 
-            icon=folium.Icon(color=marker_color, icon='tower-broadcast', prefix='fa')
-        ).add_to(m)
+        folium.Marker(p, icon=folium.DivIcon(html=f'<div style="font-size: 11pt; color: {color_code}; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; border: 1px solid {color_code}; white-space: nowrap;">{r["이름"]}</div>')).add_to(m)
+        folium.Marker(p, icon=folium.Icon(color=('red' if r['구분'] == '송신소' else 'blue'), icon='tower-broadcast', prefix='fa')).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=600, key=f"map_v82_{sd.map_key}")
+st_folium(m, width="100%", height=500, key=f"map_v86_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (중앙 정렬 및 폰트 대형화)
+# [4] 하단: 데이터 관리 현황 (스타일링 집중!)
 # ---------------------------------------------------------
 st.divider()
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
 
-# [중요] 모든 컬럼을 중앙 정렬하는 설정 생성
-# TextColumn을 사용하여 alignment="center"를 강제 적용합니다.
-cfg = {col: st.column_config.TextColumn(col, alignment="center") for col in CL}
+# 1. 특정 컬럼(구분)만 중앙 정렬하는 설정
+config_dict = {
+    "구분": st.column_config.TextColumn("구분", alignment="center", width="small"),
+    "지역": st.column_config.TextColumn("지역", alignment="left"),
+    "이름": st.column_config.TextColumn("이름", alignment="left")
+}
 
-# 행별 색상 스타일링
-def style_row(row):
-    color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
-    return [color for _ in row]
+# 2. 행별 색상 및 채널 폰트 크기 지정 함수
+def apply_custom_style(df):
+    def style_logic(row):
+        # 송신소=적색, 중계소=청색 기본 설정
+        text_color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
+        styles = [text_color] * len(row)
+        
+        # [수정포인트] 채널 컬럼만 폰트를 24px로 대폭 키움
+        large_font_style = text_color + " font-size: 24px; font-weight: bold;"
+        
+        for i, col_name in enumerate(df.columns):
+            if col_name in SL: # SL은 채널 리스트 (SBS, KBS1 등)
+                styles[i] = large_font_style
+        return styles
+    
+    return df.style.apply(style_logic, axis=1)
 
-styled_df = disp_df[CL].style.apply(style_row, axis=1)
+styled_df = apply_custom_style(disp_df[CL])
 
 event = st.dataframe(
     styled_df, 
@@ -195,18 +183,14 @@ event = st.dataframe(
     on_select="rerun", 
     selection_mode="single-row", 
     hide_index=True, 
-    column_config=cfg,  # 중앙 정렬 설정 적용
+    column_config=config_dict, 
     key="main_table"
 )
 
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
-    try:
-        new_la, new_lo = float(sel_row['위도']), float(sel_row['경도'])
-        if sd.center != [new_la, new_lo]:
-            sd.center, sd.t_la, sd.t_lo = [new_la, new_lo], new_la, new_lo
-            sd.map_key += 1; st.rerun()
-    except: pass
+    sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
+    sd.map_key += 1; st.rerun()
 
 st.download_button(label="📥 전체 데이터 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv', mime='text/csv')
