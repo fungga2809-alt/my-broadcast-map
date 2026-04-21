@@ -84,4 +84,96 @@ with st.sidebar:
                 l = Nominatim(user_agent="v62_mgr").geocode(sq)
                 if l:
                     sd.t_la, sd.t_lo, sd.center = l.latitude, l.longitude, [l.latitude, l.longitude]
-                    st.
+                    st.rerun()
+            except: st.error("검색 결과가 없습니다.")
+
+    st.divider()
+    m_mode = st.radio("📍 시설 관리", ["새로 등록", "정보 수정"], horizontal=True)
+    
+    target_nm = None
+    if m_mode == "정보 수정" and not sd.df.empty:
+        target_nm = st.selectbox("수정할 시설 선택", sd.df['이름'].tolist())
+        
+    # [핵심 로직] 모드 전환이나 시설 선택 시 검색 결과(t_la)가 있다면 초기화하지 않습니다!
+    if sd.last_mode != m_mode or sd.last_target != target_nm:
+        if m_mode == "정보 수정" and target_nm:
+            row = sd.df[sd.df['이름'] == target_nm].iloc[0]
+            sd["i_cat"], sd["i_nm"] = row['구분'], row['이름']
+            sd["i_la_fixed"], sd["i_lo_fixed"] = float(row['위도']), float(row['경도'])
+            for s in SL: sd[f"i_{s}"] = str(row[s])
+            
+            # 검색 결과가 없을 때만 해당 시설 위치로 지도를 강제 이동시킵니다.
+            if sd.t_la is None:
+                sd.center = [sd["i_la_fixed"], sd["i_lo_fixed"]]
+        else:
+            # 검색 결과가 없을 때만 새로 등록 필드 초기화
+            if sd.t_la is None:
+                sd["i_cat"], sd["i_nm"] = "중계소", ""
+                for s in SL: sd[f"i_{s}"] = ""
+        sd.last_mode, sd.last_target = m_mode, target_nm
+
+    cat = st.radio("구분", ["송신소", "중계소"], key="i_cat", horizontal=True)
+    nm = st.text_input("시설 명칭", key="i_nm")
+    
+    # 좌표 우선순위: 검색된 좌표(t_la) > 시설 원본 좌표(fixed) > 기본 중심점
+    curr_la = sd.t_la if sd.t_la is not None else sd.get("i_la_fixed", sd.center[0])
+    curr_lo = sd.t_lo if sd.t_lo is not None else sd.get("i_lo_fixed", sd.center[1])
+    
+    fla = st.number_input("위도", value=float(curr_la), format="%.6f")
+    flo = st.number_input("경도", value=float(curr_lo), format="%.6f")
+
+    st.write("📺 채널 (DTV | UHD)")
+    for i in range(0, len(SL), 2):
+        c1, c2 = st.columns(2)
+        c1.text_input(SL[i], key=f"i_{SL[i]}")
+        c2.text_input(SL[i+1], key=f"i_{SL[i+1]}")
+
+    if st.button("✅ 저장"):
+        if nm:
+            save_history()
+            v = [cat, nm] + [sd[f"i_{s}"] for s in SL] + [str(fla), str(flo), ""]
+            if m_mode == "정보 수정" and target_nm:
+                idx = sd.df[sd.df['이름'] == target_nm].index[0]
+                sd.df.loc[idx] = v
+            else:
+                sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
+            # 저장 후에는 검색 결과 클리어
+            sd.t_la, sd.t_lo, sd.last_target = None, None, None; st.rerun()
+
+    if not sd.df.empty:
+        st.divider()
+        del_tg = st.selectbox("삭제", sd.df['이름'].tolist(), key="del_box")
+        if st.button("🚨 삭제"):
+            save_history(); sd.df = sd.df[sd.df['이름'] != del_tg]
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
+
+# [3] 지도 출력
+ly = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "위성+도로" else \
+     'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' if sd.layer == "순수 위성" else \
+     'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
+
+m = folium.Map(location=sd.center, zoom_start=14, tiles=ly, attr='G')
+if my_p: folium.Marker(my_p, icon=folium.Icon(color='orange', icon='person')).add_to(m)
+
+for _, r in sd.df.iterrows():
+    try:
+        p, clr = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
+        d = f"<br>📏 {round(geodesic(my_p, p).km, 2)}km" if my_p else ""
+        dt = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" not in s and str(r[s]).strip() != ""])
+        uh = " | ".join([f"{s}:{r[s]}" for s in SL if "(U)" in s and str(r[s]).strip() != ""])
+        txt = f"<b>[{r['구분']}] {r['이름']}</b><br>DTV: {dt}<br>UHD: {uh}{d}"
+        folium.Marker(p, popup=folium.Popup(txt, max_width=300), icon=folium.Icon(color=clr, icon='tower-broadcast', prefix='fa')).add_to(m)
+    except: pass
+
+if sd.t_la is not None:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='location-dot', prefix='fa')).add_to(m)
+
+res = st_folium(m, width="100%", height=800, key="map_v62")
+
+if res and res.get('last_clicked'):
+    la, lo = round(res['last_clicked']['lat'], 6), round(res['last_clicked']['lng'], 6)
+    if sd.t_la != la:
+        sd.t_la, sd.t_lo, sd.center = la, lo, [la, lo]; st.rerun()
+
+st.dataframe(sd.df, use_container_width=True)
