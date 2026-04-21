@@ -136,7 +136,6 @@ for _, r in disp_df.iterrows():
         color_code = '#FF0000' if r['구분'] == '송신소' else '#0000FF'
         marker_color = 'red' if r['구분'] == '송신소' else 'blue'
         
-        # 지도 위 고정 라벨
         folium.Marker(
             p,
             icon=folium.DivIcon(
@@ -152,18 +151,24 @@ for _, r in disp_df.iterrows():
         ).add_to(m)
     except: pass
 
-st_folium(m, width="100%", height=600, key=f"map_v79_{sd.map_key}")
+st_folium(m, width="100%", height=600, key=f"map_v80_{sd.map_key}")
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 관리 현황 (색상 구분 타이틀 적용)
+# [4] 하단: 데이터 관리 현황 (표 텍스트 색상 구분 적용)
 # ---------------------------------------------------------
 st.divider()
-# [수정] 타이틀 복구 및 색상 구분 적용
 st.markdown(f"### 📊 <span style='color:red'>송신소</span> / <span style='color:blue'>중계소</span> 데이터 관리 현황", unsafe_allow_html=True)
-st.info("💡 아래 표에서 시설을 클릭하면 해당 위치로 지도가 즉시 이동합니다.")
+
+# [핵심] 표 텍스트 색상 스타일링 함수
+def style_row_by_type(row):
+    color = 'color: red;' if row['구분'] == '송신소' else 'color: blue;'
+    return [color] * len(row)
+
+# 스타일 적용된 데이터프레임 생성
+styled_df = disp_df[CL].style.apply(style_row_by_type, axis=1)
 
 event = st.dataframe(
-    disp_df[CL], 
+    styled_df, 
     use_container_width=True, 
     on_select="rerun", 
     selection_mode="single-row", 
