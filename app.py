@@ -7,7 +7,7 @@ import os
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
 
-# [1] 초기화
+# [1] 초기화 및 설정
 st.set_page_config(page_title="Broadcasting Master", layout="wide")
 DB = 'stations.csv'
 SL = ['SBS','SBS(U)','KBS2','KBS2(U)','KBS1','KBS1(U)','EBS','EBS(U)','MBC','MBC(U)']
@@ -29,10 +29,9 @@ if 'center' not in sd: sd.center = [35.1796, 129.0756]
 if 't_la' not in sd: sd.t_la = None
 if 't_lo' not in sd: sd.t_lo = None
 
-# 제목 변경
 st.markdown("## 📡 DTV/UHD 방송 인프라 마스터")
 
-# [2] 사이드바
+# [2] 사이드바 도구
 with st.sidebar:
     st.header("⚙️ 도구")
     gps = get_geolocation()
@@ -46,7 +45,7 @@ with st.sidebar:
     st.divider()
     sq = st.text_input("주소 검색")
     if st.button("📍 주소 찾기"):
-        g = Nominatim(user_agent="v42_mgr")
+        g = Nominatim(user_agent="v43_mgr")
         l = g.geocode(sq)
         if l:
             sd.t_la, sd.t_lo = l.latitude, l.longitude
@@ -54,6 +53,7 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
+    st.markdown("### 📍 시설 등록")
     cat = st.radio("구분", ["송신소", "중계소"], horizontal=True)
     nm = st.text_input("시설 명칭")
     la_v = sd.t_la if sd.t_la else sd.center[0]
@@ -83,14 +83,17 @@ with st.sidebar:
             sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
             st.rerun()
 
-# [3] 지도 (800px 및 레이어 3종)
-m = folium.Map(location=sd.center, zoom_start=14)
-# 구글 레이어 주소
-ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'
-ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}'
-ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}'
+# [3] 지도 설정 (기본 레이어를 위성+도로로 고정)
+# tiles=None으로 설정하여 기본 지도가 뜨지 않게 합니다.
+m = folium.Map(location=sd.center, zoom_start=14, tiles=None)
 
-folium.TileLayer(tiles=ly_y, attr='G', name='위성+도로', overlay=False).add_to(m)
+# 구글 레이어 주소
+ly_y = 'https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}' # 위성 + 도로 (Hybrid)
+ly_s = 'https://mt1.google.com/vt/lyrs=s&hl=ko&x={x}&y={y}&z={z}' # 순수 위성 (Satellite)
+ly_m = 'https://mt1.google.com/vt/lyrs=m&hl=ko&x={x}&y={y}&z={z}' # 일반 지도 (Roadmap)
+
+# 첫 번째로 추가되는 레이어가 기본값이 됩니다.
+folium.TileLayer(tiles=ly_y, attr='G', name='위성 + 도로', overlay=False).add_to(m)
 folium.TileLayer(tiles=ly_s, attr='G', name='순수 위성', overlay=False).add_to(m)
 folium.TileLayer(tiles=ly_m, attr='G', name='일반 지도', overlay=False).add_to(m)
 folium.LayerControl().add_to(m)
@@ -114,7 +117,7 @@ if sd.t_la:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green')).add_to(m)
 
 # 800px 높이 출력
-res = st_folium(m, width="100%", height=800, key="map_v42")
+res = st_folium(m, width="100%", height=800, key="map_v43")
 
 if res and res.get('last_clicked'):
     lc = res['last_clicked']
