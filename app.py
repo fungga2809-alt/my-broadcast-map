@@ -46,7 +46,7 @@ st.markdown("""
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
     
-    /* 버튼 스타일 최적화 */
+    /* 버튼 스타일 최적화: 줄바꿈 방지 */
     .stButton > button { 
         width: 100%; 
         border-radius: 8px; 
@@ -78,7 +78,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_v122")
+                geolocator = Nominatim(user_agent="broadcasting_master_v122")
                 loc = geolocator.geocode(search_addr)
                 if loc:
                     sd.center = [loc.latitude, loc.longitude]
@@ -87,7 +87,7 @@ with st.sidebar:
                     sd.map_key += 1; st.rerun()
             except: st.error("검색 오류")
 
-    # [v122 수정] 버튼 간격 및 비율 최적화
+    # [v122 핵심] 버튼 간격 및 비율 최적화 (줄바꿈 방지)
     c1, c2 = st.columns([1, 1.2], gap="small") 
     with c1:
         if st.button("🎯 내 위치"):
@@ -130,14 +130,15 @@ with st.sidebar:
     sd["v_cat"] = st.radio("시설 구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1)
     st.text_input("송신소/중계소 이름", key="v_nm")
     
-    # 좌표 입력 (지도 클릭과 연동)
+    # 좌표 입력
     disp_la = float(sd.t_la if sd.t_la is not None else sd.center[0])
     disp_lo = float(sd.t_lo if sd.t_lo is not None else sd.center[1])
-    new_la = st.number_input("위도", value=disp_la, format="%.6f")
-    new_lo = st.number_input("경도", value=disp_lo, format="%.6f")
-    if new_la != disp_la or new_lo != disp_lo:
-        sd.t_la, sd.t_lo = new_la, new_lo
+    la_v = st.number_input("위도", value=disp_la, format="%.6f", key="inp_la")
+    lo_v = st.number_input("경도", value=disp_lo, format="%.6f", key="inp_lo")
+    if la_v != disp_la or lo_v != disp_lo:
+        sd.t_la, sd.t_lo = la_v, lo_v
 
+    # 채널 설정 (v70 그룹화)
     st.subheader("📺 물리 채널 설정")
     st.info("📡 **DTV 채널**")
     d_cols = st.columns(3)
@@ -183,16 +184,16 @@ if sd.t_la is not None:
 
 map_data = st_folium(m, width="100%", height=700, key=f"map_v122_{sd.map_key}")
 
-# v70 순정 클릭 로직 (마커 이동 자유)
+# v70 순정 클릭 로직 (가장 안정적인 마커 이동)
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo
         sd.m_mode, sd.target_nm, sd.last_loaded_nm = "새로 등록", None, "NEW"
-        st.rerun()
+        sd.map_key += 1; st.rerun()
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 표 (색상 및 중앙 정렬 강화)
+# [4] 하단: 데이터 표 (v118 디자인 - 적/청 색상 및 중앙 정렬)
 # ---------------------------------------------------------
 st.divider()
 def style_table(row):
