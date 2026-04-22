@@ -40,32 +40,22 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] v122 UI 최적화 (버튼 줄바꿈 방지 및 높이 통일)
+# [CSS] v125 디자인 가이드 (버튼 및 팝업 최적화)
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
-    
-    /* 버튼 스타일 최적화 */
     .stButton > button { 
-        width: 100%; 
-        border-radius: 8px; 
-        font-weight: bold; 
-        white-space: nowrap !important; /* 글자 줄바꿈 절대 방지 */
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 0.5rem 0.2rem !important;
-        min-height: 45px;
+        width: 100%; border-radius: 8px; font-weight: bold; 
+        white-space: nowrap !important; min-height: 45px;
     }
-    
     .leaflet-popup-content { font-size: 14px !important; width: 250px !important; line-height: 1.6; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v122 UI 개선 레이아웃
+# [2] 사이드바: v122의 정돈된 UI 유지
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -78,16 +68,15 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_v122")
+                geolocator = Nominatim(user_agent="broadcasting_v125")
                 loc = geolocator.geocode(search_addr)
                 if loc:
-                    sd.center = [loc.latitude, loc.longitude]
-                    sd.t_la, sd.t_lo = loc.latitude, loc.longitude
+                    sd.center, sd.t_la, sd.t_lo = [loc.latitude, loc.longitude], loc.latitude, loc.longitude
                     sd.m_mode, sd.target_nm, sd.last_loaded_nm = "새로 등록", None, "NEW"
-                    sd.map_key += 1; st.rerun()
+                    sd.map_key += 1; st.rerun() # 검색 시에만 지도 리셋(중심 이동)
             except: st.error("검색 오류")
 
-    # [v122 수정] 버튼 간격 및 비율 최적화
+    # 버튼 비율 최적화 (한 줄 배치)
     c1, c2 = st.columns([1, 1.2], gap="small") 
     with c1:
         if st.button("🎯 내 위치"):
@@ -101,12 +90,11 @@ with st.sidebar:
         if st.button("↩️ 되돌리기"):
             if sd.history: 
                 sd.df = sd.history.pop()
-                sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                st.rerun()
+                sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
 
-    # 모드 설정 및 데이터 로드
+    # 모드 및 데이터 로드
     sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
@@ -130,14 +118,14 @@ with st.sidebar:
     sd["v_cat"] = st.radio("시설 구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1)
     st.text_input("송신소/중계소 이름", key="v_nm")
     
-    # 좌표 입력 (지도 클릭과 연동)
+    # 좌표 입력
     disp_la = float(sd.t_la if sd.t_la is not None else sd.center[0])
     disp_lo = float(sd.t_lo if sd.t_lo is not None else sd.center[1])
-    new_la = st.number_input("위도", value=disp_la, format="%.6f")
-    new_lo = st.number_input("경도", value=disp_lo, format="%.6f")
-    if new_la != disp_la or new_lo != disp_lo:
-        sd.t_la, sd.t_lo = new_la, new_lo
+    la_v = st.number_input("위도", value=disp_la, format="%.6f", key="inp_la")
+    lo_v = st.number_input("경도", value=disp_lo, format="%.6f", key="inp_lo")
+    if la_v != disp_la or lo_v != disp_lo: sd.t_la, sd.t_lo = la_v, lo_v
 
+    # 채널 설정 (그룹화)
     st.subheader("📺 물리 채널 설정")
     st.info("📡 **DTV 채널**")
     d_cols = st.columns(3)
@@ -159,7 +147,7 @@ with st.sidebar:
             st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도 (v70 팝업 및 명칭 강조)
+# [3] 본문: 지도 (v125 리셋 깜빡임 해결 로직)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -181,18 +169,20 @@ for _, r in disp_df.iterrows():
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v122_{sd.map_key}")
+# [핵심] 지도 출력 시 key를 바꾸지 않음으로써 깜빡임(White Flash) 방지
+map_data = st_folium(m, width="100%", height=700, key=f"fixed_map_v125_{sd.map_key}")
 
 # v70 순정 클릭 로직 (마커 이동 자유)
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-    if sd.t_la != cla:
+    if sd.t_la != cla or sd.t_lo != clo:
         sd.t_la, sd.t_lo = cla, clo
         sd.m_mode, sd.target_nm, sd.last_loaded_nm = "새로 등록", None, "NEW"
+        # [v125] map_key를 올리지 않고 rerun하여 지도가 초기화되지 않게 함
         st.rerun()
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 표 (색상 및 중앙 정렬 강화)
+# [4] 하단: 데이터 표 (v118 디자인 유지)
 # ---------------------------------------------------------
 st.divider()
 def style_table(row):
@@ -213,6 +203,6 @@ if event and event.get("selection", {}).get("rows"):
     if sd.target_nm != sel_row['이름']:
         sd.center, sd.m_mode, sd.target_nm, sd.last_loaded_nm = [float(sel_row['위도']), float(sel_row['경도'])], "정보 수정", sel_row['이름'], None
         sd.t_la, sd.t_lo = None, None
-        sd.map_key += 1; st.rerun()
+        sd.map_key += 1; st.rerun() # 표 클릭 시에는 해당 위치로 지도 중심 이동
 
 st.download_button("📥 전체 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
