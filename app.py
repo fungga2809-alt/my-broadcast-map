@@ -86,7 +86,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 최적화된 사이드바 및 버튼 디자인
+# [CSS] 수직 배치 및 대형 버튼 디자인
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -98,27 +98,23 @@ st.markdown("""
         font-size: 19px !important; background-color: #f8f9fa !important;
         border: 2px solid #adb5bd !important; border-radius: 10px !important;
         color: #1a1c23 !important; box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-        transition: all 0.2s ease-in-out !important;
     }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] { gap: 5px !important; }
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
-    
-    /* 숫자 조절 버튼 대형화 유지 */
     div[data-testid="stNumberInput"] button { min-width: 50px !important; height: 50px !important; }
     div[data-testid="stNumberInput"] input { height: 50px !important; font-size: 20px !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 사이드바: 전문가 최적화 동선
+# 사이드바: 최적화 작업 동선
 # ---------------------------------------------------------
 with st.sidebar:
-    # 1단: 위치제어
     st.header("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색")
-    geolocator = Nominatim(user_agent="broadcasting_v480")
+    geolocator = Nominatim(user_agent="broadcasting_v490")
     
     c1, c2 = st.columns(2)
     with c1:
@@ -133,8 +129,7 @@ with st.sidebar:
                 except: st.error("오류")
     with c2:
         if st.button("↩️ 복구"):
-            if sd.history: 
-                sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); safe_rerun()
+            if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); safe_rerun()
 
     if st.button("🧭 내 위치"):
         gps = get_geolocation()
@@ -148,16 +143,12 @@ with st.sidebar:
             safe_rerun()
 
     st.divider()
-
-    # 2단: 관제및관리
     st.header("⚙️ 관제 및 관리")
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     filter_idx = existing_regs.index(sd.sel_reg) + 1 if sd.sel_reg in existing_regs else 0
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
 
     st.divider()
-    
-    # 3단: 위치지정
     st.header("🎯 위치 지정 및 등록")
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 지도 중앙을 신규 위치로 지정"):
@@ -259,40 +250,11 @@ with st.sidebar:
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
 # ---------------------------------------------------------
-# 본문: 지도 및 데이터 현황
+# 본문: 지도 (상단 배치)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-# 🔥 [핵심 개선] 데이터 현황 표를 지도 위에 먼저 그려서 선택 이벤트를 가로챔
-st.subheader("📊 데이터 현황")
-view_df = disp_df.copy()
-view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
-
-event = st.dataframe(
-    view_df[['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']], 
-    use_container_width=True, 
-    on_select="rerun", 
-    selection_mode="single-row", 
-    hide_index=True, 
-    key="main_table"
-)
-
-# 선택 시 마커 사라짐 방지를 위한 즉각적인 세션 업데이트
-if event and event.get("selection", {}).get("rows"):
-    idx = event["selection"]["rows"][0]
-    sel = disp_df.iloc[idx]
-    if sd.target_nm != sel['이름']:
-        sd.base_center, sd.base_zoom = [float(sel['위도']), float(sel['경도'])], 16
-        sd.m_mode, sd.target_nm = "정보 수정", sel['이름']
-        sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(sel['위도']), float(sel['경도']), str(sel['주소'])
-        sd.last_loaded_nm = None 
-        sd.map_key += 1
-        st.rerun()
-
-# ---------------------------------------------------------
-# 지도 렌더링
-# ---------------------------------------------------------
 map_container = st.container()
 with map_container:
     css_injection = """
@@ -300,7 +262,7 @@ with map_container:
     .map-crosshair { position: absolute; top: 50%; left: 50%; margin-left: -20px; margin-top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 9999; pointer-events: none; }
     .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
     .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
-    .leaflet-popup-content-wrapper { min-width: 500px !important; }
+    .leaflet-popup-content-wrapper { min-width: 500px !important; width: 500px !important; }
     .leaflet-popup-content { min-width: 480px !important; width: 480px !important; margin: 13px !important; }
     </style>
     <div class="map-crosshair"></div>
@@ -310,19 +272,40 @@ with map_container:
     
     for _, r in disp_df.iterrows():
         is_editing = (sd.m_mode == "정보 수정" and sd.target_nm == r['이름'])
-        # 마커 좌표 결정 시 세션 데이터 우선 순위 부여 (사라짐 방지)
-        lat = float(sd.in_t_la) if is_editing else float(r['위도'])
-        lon = float(sd.in_t_lo) if is_editing else float(r['경도'])
+        lat, lon = (float(sd.in_t_la), float(sd.in_t_lo)) if is_editing else (float(r['위도']), float(r['경도']))
         p, color = [lat, lon], ('red' if r['구분'] == '송신소' else 'blue')
-        
         dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
         p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div><div style='font-size:17px; margin-bottom:8px; line-height:1.4;'><b>📡 DTV:</b><br>{dt_pop}</div><div style='font-size:17px; line-height:1.4;'><b>✨ UHD:</b><br>{uh_pop}</div></div>"
-        
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-        
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v480_{sd.map_key}", returned_objects=["center"])
+    st_folium(m, use_container_width=True, height=900, key=f"map_v490_{sd.map_key}", returned_objects=["center"])
 
-if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+# ---------------------------------------------------------
+# 본문: 데이터 현황 (하단 배치 및 에러 방지)
+# ---------------------------------------------------------
+st.subheader("📊 데이터 현황")
+view_df = disp_df.copy()
+view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
+
+event = st.dataframe(
+    view_df[['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']], 
+    use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table"
+)
+
+# 🔥 [핵심] 체크박스 클릭 시 찰나의 에러를 방지하는 안전 로직
+try:
+    if event and event.get("selection", {}).get("rows"):
+        idx = event["selection"]["rows"][0]
+        if idx < len(disp_df):
+            sel = disp_df.iloc[idx]
+            if sd.target_nm != sel['이름']:
+                sd.base_center, sd.base_zoom = [float(sel['위도']), float(sel['경도'])], 16
+                sd.m_mode, sd.target_nm = "정보 수정", sel['이름']
+                sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(sel['위도']), float(sel['경도']), str(sel['주소'])
+                sd.last_loaded_nm = None 
+                sd.map_key += 1
+                st.rerun()
+except Exception:
+    pass # 찰나의 인덱스 불일치 오류는 조용히 무시하여 빨간 창 방지
 
 st.download_button("📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
