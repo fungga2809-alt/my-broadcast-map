@@ -66,7 +66,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 레이아웃 정밀 타겟팅 (전체 여백을 망가뜨렸던 속성 제거)
+# [CSS] 허접해 보이던 3버튼 그룹을 묵직하고 세련되게 성형
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -74,25 +74,32 @@ st.markdown("""
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
     
-    /* 3색 액션 버튼 */
+    /* 하단 3색 액션 버튼 */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
     
-    /* 🔥 [핵심] 오직 사이드바의 첫 번째 버튼 컬럼(검색/내위치/복구)만 정밀 타겟팅 */
+    /* 🔥 [핵심] 상단 위치 제어 3버튼 (검색/내위치/복구) 디자인 환골탈태 */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type {
-        gap: 5px !important; /* ___ 형태로 간격 축소 */
+        gap: 4px !important; /* 사이 간격을 4px로 초밀착 */
     }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div[data-testid="column"] {
-        flex: 1 1 calc(33.33% - 5px) !important;
-        width: 33.33% !important;
+        width: 33.3% !important;
         min-width: 0 !important;
     }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button {
-        width: 100% !important; /* 간격이 줄어든 만큼 버튼이 꽉 차게 늘어남 */
-        padding: 0 4px !important; /* 버튼 안쪽 여백 조절 */
-        font-size: 16px !important;
-        letter-spacing: -0.5px !important;
+        width: 100% !important; /* 버튼이 컬럼 공간을 100% 꽉 채움 */
+        padding: 8px 0 !important; /* 텍스트 주변의 빈 공간을 버튼 영역으로 흡수 */
+        font-size: 15px !important;
+        background-color: #f1f3f5 !important; /* 둥둥 떠보이지 않게 연한 회색 바탕 추가 */
+        border: 1px solid #ced4da !important;
+        border-radius: 6px !important;
+        color: #495057 !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button:hover {
+        background-color: #e9ecef !important;
+        border-color: #adb5bd !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -109,12 +116,11 @@ with st.sidebar:
 
     st.subheader("🔍 위치 제어")
     
-    # [복구] 검색 칸 가독성 및 디자인 완벽 유지
     search_addr = st.text_input("주소/건물명 검색")
     
-    # 이 첫 번째 컬럼이 CSS로 정밀 타겟팅되어 간격은 좁고 버튼은 커집니다.
+    # 꽉 채워진 솔리드 스타일의 3버튼 그룹
     c_loc = st.columns([1, 1, 1]) 
-    geolocator = Nominatim(user_agent="broadcasting_v395")
+    geolocator = Nominatim(user_agent="broadcasting_v400")
 
     with c_loc[0]:
         if st.button("🔍 검색"):
@@ -328,7 +334,7 @@ with map_container:
     if sd.m_mode == "신규 등록" and sd.in_t_la is not None:
         folium.Marker([sd.in_t_la, sd.in_t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v395_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v400_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
