@@ -17,12 +17,10 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 sd = st.session_state
 
-# [핵심 방어막] 새로고침 시 채널 데이터가 날아가는 것을 막는 특수 함수
 def safe_rerun():
     sd.temp_channels = {s: sd.get(f"ch_{s}", "") for s in SL}
     st.rerun()
 
-# 새로고침 직후 안전 금고에서 채널 데이터 복구
 if 'temp_channels' in sd:
     for s in SL:
         sd[f"ch_{s}"] = sd.temp_channels.get(s, "")
@@ -76,9 +74,6 @@ defaults = {
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 
-for s in SL:
-    if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
-
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -105,7 +100,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v365")
+    geolocator = Nominatim(user_agent="broadcasting_v370")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -140,27 +135,34 @@ with st.sidebar:
         sd.m_mode = "신규 등록"
         sd.target_nm = None  
         sd.last_loaded_nm = None
-        for s in SL: sd[f"ch_{s}"] = "" # 신규 등록 시에는 확실하게 채널을 비움
+        for s in SL: sd[f"ch_{s}"] = ""
         target_loc = sd.crosshair_center if sd.crosshair_center else sd.base_center
         sd.t_la, sd.t_lo = target_loc[0], target_loc[1]
+        
+        # [핵심 고정] 지도가 튕기지 않도록 베이스 센터를 조준경 위치로 즉시 고정
+        sd.base_center = [target_loc[0], target_loc[1]] 
+        
         try:
             rev = geolocator.reverse(f"{sd.t_la}, {sd.t_lo}")
             if rev: sd.v_addr = clean_kr_address(rev.address)
         except: pass
-        safe_rerun() # 안전한 새로고침
+        safe_rerun()
 
     # 2. 수정 위치 지정 버튼 (청색)
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 지도 중앙을 수정 위치로 지정"):
         sd.m_mode = "정보 수정"
-        # 여기서는 채널을 지우지 않고 그대로 유지함
         target_loc = sd.crosshair_center if sd.crosshair_center else sd.base_center
         sd.t_la, sd.t_lo = target_loc[0], target_loc[1]
+        
+        # [핵심 고정] 수정 시 지도가 원래 자리로 튕겨 돌아가지 않도록 고정
+        sd.base_center = [target_loc[0], target_loc[1]]
+        
         try:
             rev = geolocator.reverse(f"{sd.t_la}, {sd.t_lo}")
             if rev: sd.v_addr = clean_kr_address(rev.address)
         except: pass
-        safe_rerun() # 수정된 좌표만 적용하고 채널은 보존
+        safe_rerun() 
 
     # 3. 데이터 등록 예약석 (녹색 버튼)
     save_btn_placeholder = st.empty()
@@ -262,10 +264,10 @@ with st.sidebar:
         u_cols = st.columns(3)
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
+        # [명칭 통일] 녹색 버튼의 텍스트를 모드 상관없이 "✅ 데이터 등록"으로 통일
         with save_btn_placeholder:
             st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
-            btn_txt = "✅ 신규 데이터 등록" if sd.m_mode == "신규 등록" else "✅ 수정 데이터 등록"
-            if st.button(btn_txt):
+            if st.button("✅ 데이터 등록"):
                 if v_nm and final_reg:
                     sd.history.append(sd.df.copy())
                     v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(cur_la), str(cur_lo), sd.v_addr]
@@ -273,7 +275,7 @@ with st.sidebar:
                     else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                     sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
                     sd.t_la, sd.t_lo, sd.v_addr, sd.last_loaded_nm = None, None, "", None 
-                    st.success("저장 완료!"); st.rerun() # 정상적인 완전 리셋
+                    st.success("데이터가 안전하게 등록되었습니다!"); st.rerun() 
 
 # ---------------------------------------------------------
 # 본문: 지도 및 데이터 현황
@@ -318,10 +320,9 @@ with map_container:
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
 
-    if sd.m_mode == "신규 등록" and sd.t_la is not None:
-        folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
+    # [핵심] 신규 등록 시 나타나던 임시 녹색 마커 코드 완전 삭제
 
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v365_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v370_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
@@ -339,7 +340,6 @@ if event and event.get("selection", {}).get("rows"):
         sd.m_mode, sd.target_nm = "정보 수정", sel['이름']
         sd.v_addr, sd.t_la, sd.t_lo = str(sel['주소']), float(sel['위도']), float(sel['경도'])
         
-        # [방어막 2] 표에서 클릭할 때도 기존 데이터 파괴 방지
         sd.last_loaded_nm = None 
         safe_rerun()
 
