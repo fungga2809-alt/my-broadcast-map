@@ -122,7 +122,7 @@ with st.sidebar:
     # 1단: 위치제어
     st.header("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색")
-    geolocator = Nominatim(user_agent="broadcasting_v470")
+    geolocator = Nominatim(user_agent="broadcasting_v475")
     
     c1, c2 = st.columns(2)
     with c1:
@@ -271,7 +271,6 @@ st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 map_container = st.container()
 with map_container:
-    # 팝업 너비와 그림자 조준경 스타일 고정
     css_injection = """
     <style>
     .map-crosshair { position: absolute; top: 50%; left: 50%; margin-left: -20px; margin-top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 9999; pointer-events: none; }
@@ -282,7 +281,6 @@ with map_container:
     </style>
     <div class="map-crosshair"></div>
     """
-    
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
     m.get_root().html.add_child(folium.Element(css_injection))
     
@@ -291,30 +289,46 @@ with map_container:
         lat, lon = (float(sd.in_t_la), float(sd.in_t_lo)) if (is_editing and sd.in_t_la) else (float(r['위도']), float(r['경도']))
         p, color = [lat, lon], ('red' if r['구분'] == '송신소' else 'blue')
         
-        # 🔥 [핵심 복구] 상세 팝업 HTML 디자인 (v320 기준)
         dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
         p_html = f"""
         <div style='font-family: sans-serif; padding-top: 5px;'>
             <div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div>
             <div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div>
-            <div style='font-size:17px; margin-bottom:8px; line-height:1.4;'>
-                <b>📡 DTV:</b><br>{dt_pop}
-            </div>
-            <div style='font-size:17px; line-height:1.4;'>
-                <b>✨ UHD:</b><br>{uh_pop}
-            </div>
+            <div style='font-size:17px; margin-bottom:8px; line-height:1.4;'><b>📡 DTV:</b><br>{dt_pop}</div>
+            <div style='font-size:17px; line-height:1.4;'><b>✨ UHD:</b><br>{uh_pop}</div>
         </div>
         """
-        
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-        
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v470_{sd.map_key}", returned_objects=["center"])
+    st_folium(m, use_container_width=True, height=900, key=f"map_v475_{sd.map_key}", returned_objects=["center"])
 
-if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-
+# ---------------------------------------------------------
+# 🔥 [핵심 복구] 데이터 현황 (선택 및 이동 기능)
+# ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 view_df = disp_df.copy()
 view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
-st.dataframe(view_df[['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']], use_container_width=True, hide_index=True)
+
+# 체크박스를 살려내는 핵심 코드
+event = st.dataframe(
+    view_df[['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']], 
+    use_container_width=True, 
+    on_select="rerun", 
+    selection_mode="single-row", 
+    hide_index=True, 
+    key="main_table"
+)
+
+# 선택 시 이동 및 수정 모드 진입 로직
+if event and event.get("selection", {}).get("rows"):
+    idx = event["selection"]["rows"][0]
+    sel = disp_df.iloc[idx]
+    if sd.target_nm != sel['이름']:
+        sd.base_center, sd.base_zoom = [float(sel['위도']), float(sel['경도'])], 16
+        sd.m_mode, sd.target_nm = "정보 수정", sel['이름']
+        sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(sel['위도']), float(sel['경도']), str(sel['주소'])
+        sd.last_loaded_nm = None 
+        sd.map_key += 1
+        st.rerun()
+
 st.download_button("📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
