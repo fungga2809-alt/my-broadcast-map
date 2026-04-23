@@ -61,14 +61,17 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] UI 스타일
+# [CSS] UI 스타일 고도화
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] { gap: 5px !important; }
-    .leaflet-popup-content { font-size: 14px !important; width: 350px !important; line-height: 1.6; } /* 팝업 너비 기본값 확장 */
+    
+    /* [수정] 팝업창 너비를 420px로 확장하여 텍스트 짤림 방지 */
+    .leaflet-popup-content { font-size: 14px !important; width: 420px !important; line-height: 1.6; }
+    
     [data-testid="stDataFrame"] td { text-align: center !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -79,7 +82,6 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
-    # 지역 필터
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, 
                              index=0 if sd.sel_reg == "전체" else (existing_regs.index(sd.sel_reg)+1 if sd.sel_reg in existing_regs else 0))
@@ -91,7 +93,7 @@ with st.sidebar:
         if st.button("📍검색"):
             if search_addr:
                 try:
-                    geolocator = Nominatim(user_agent="broadcasting_v260")
+                    geolocator = Nominatim(user_agent="broadcasting_v265")
                     loc = geolocator.geocode(search_addr)
                     if loc:
                         sd.center, sd.t_la, sd.t_lo = [loc.latitude, loc.longitude], loc.latitude, loc.longitude
@@ -113,7 +115,7 @@ with st.sidebar:
 
     st.divider()
     
-    # 📋 정보 원클릭 복사 박스 (사이드바 최상단)
+    # 📋 정보 원클릭 복사 박스
     st.subheader("📋 정보 원클릭 복사")
     cur_lat = sd.t_la if sd.t_la is not None else sd.center[0]
     cur_lon = sd.t_lo if sd.t_lo is not None else sd.center[1]
@@ -128,7 +130,6 @@ with st.sidebar:
     f_df_sb = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df_sb['이름'].tolist()
 
-    # --- [입력 섹션] ---
     if sd.m_mode == "신규 등록":
         st.subheader("🆕 신규 시설 등록")
         reg_opts = ["+ 직접 입력(신규 등록)"] + existing_regs
@@ -141,7 +142,7 @@ with st.sidebar:
         if st.button("🏠 주소 자동 찾기"):
             if addr_api_query:
                 try:
-                    geolocator = Nominatim(user_agent="broadcasting_v260")
+                    geolocator = Nominatim(user_agent="broadcasting_v265")
                     loc = geolocator.geocode(addr_api_query)
                     if loc:
                         sd.v_addr, sd.t_la, sd.t_lo = loc.address, loc.latitude, loc.longitude
@@ -204,11 +205,10 @@ m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/
 for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        # [수정] 팝업 레이아웃 가독성 최적화 및 너비 확장
         dt_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV])
         uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_UHD])
         p_html = f"""
-            <div style='width:330px; font-family: sans-serif; padding: 10px; line-height: 1.5;'>
+            <div style='width:400px; font-family: sans-serif; padding: 5px; line-height: 1.5;'>
                 <b style='font-size:18px; color:#333;'>[{r['구분']}] {r['이름']}</b><br>
                 <span style='color:gray; font-size:13px;'>{r['주소']}</span><hr style='margin: 8px 0;'>
                 <div style='margin-bottom: 8px;'>
@@ -222,12 +222,13 @@ for _, r in disp_df.iterrows():
             </div>
         """
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);pointer-events:none;">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
-        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=450)).add_to(m)
+        # [수정] max_width를 500으로 늘려 하얀 바탕이 짤리지 않게 함
+        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=500)).add_to(m)
     except: pass
 
 if sd.t_la is not None: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v260_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v265_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
