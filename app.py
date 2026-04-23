@@ -86,7 +86,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 2단 버튼 구조 및 통일된 디자인
+# [CSS] 수직 배치 및 테마 고도화
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -96,24 +96,19 @@ st.markdown("""
     /* 사이드바 배경색 */
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
     
-    /* 🔥 [핵심] 모든 위치 제어 버튼 디자인 통일 */
+    /* 제어 버튼 공통 디자인 */
     [data-testid="stSidebar"] div.stButton button {
-        width: 100% !important;
-        height: 60px !important;
-        margin-bottom: 2px !important;
-        font-size: 19px !important;
-        background-color: #f8f9fa !important;
-        border: 2px solid #adb5bd !important;
-        border-radius: 10px !important;
-        color: #1a1c23 !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        width: 100% !important; height: 60px !important; margin-bottom: 2px !important;
+        font-size: 19px !important; background-color: #f8f9fa !important;
+        border: 2px solid #adb5bd !important; border-radius: 10px !important;
+        color: #1a1c23 !important; box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
         transition: all 0.2s ease-in-out !important;
     }
     
     /* 검색-복구 사이 간격 좁히기 */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] { gap: 5px !important; }
 
-    /* 3색 액션 버튼 색상 유지 */
+    /* 3색 액션 버튼 전용 스타일 */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
@@ -121,20 +116,14 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 사이드바
+# 사이드바: 전문가 제안 새로운 작업 동선 적용
 # ---------------------------------------------------------
 with st.sidebar:
-    st.header("⚙️ 관제 및 관리")
-    existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
-    filter_idx = existing_regs.index(sd.sel_reg) + 1 if sd.sel_reg in existing_regs else 0
-    sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
-
-    st.subheader("🔍 위치 제어")
+    # 🔥 [1단: 위치제어] 현 위치나 목적지를 찾는 기능이 최상단
+    st.header("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색")
+    geolocator = Nominatim(user_agent="broadcasting_v465")
     
-    geolocator = Nominatim(user_agent="broadcasting_v460")
-    
-    # 🔥 [변경 사항] 1행: 검색 | 복구 (5:5 가로 배치)
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔍 검색"):
@@ -146,13 +135,11 @@ with st.sidebar:
                         sd.in_t_la, sd.in_t_lo, sd.in_v_addr = loc.latitude, loc.longitude, clean_kr_address(loc.address)
                         safe_rerun()
                 except: st.error("오류")
-
     with c2:
         if st.button("↩️ 복구"):
             if sd.history: 
                 sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); safe_rerun()
 
-    # 🔥 [변경 사항] 2행: 내 위치 (전체 너비 배치)
     if st.button("🧭 내 위치"):
         gps = get_geolocation()
         if gps and 'coords' in gps:
@@ -165,8 +152,17 @@ with st.sidebar:
             safe_rerun()
 
     st.divider()
+
+    # 🔥 [2단: 관제및관리] 위치 탐색 후 해당 지역의 시설들을 필터링
+    st.header("⚙️ 관제 및 관리")
+    existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
+    filter_idx = existing_regs.index(sd.sel_reg) + 1 if sd.sel_reg in existing_regs else 0
+    sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
+
+    st.divider()
     
-    # 3색 핵심 컨트롤
+    # 🔥 [3단: 위치지정] 필터링된 결과 위에 새로운 데이터를 입히거나 수정
+    st.header("🎯 위치 지정 및 등록")
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 지도 중앙을 신규 위치로 지정"):
         sd.m_mode = "신규 등록"; sd.target_nm, sd.last_loaded_nm = None, None
@@ -267,7 +263,7 @@ with st.sidebar:
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
 # ---------------------------------------------------------
-# 본문: 지도
+# 본문: 지도 및 데이터 현황
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -283,7 +279,7 @@ with map_container:
         p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div></div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v460_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v465_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
