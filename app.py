@@ -40,7 +40,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] v122 UI 최적화 및 간격 조정 (여기에 닫는 기호를 추가했습니다)
+# [CSS] v122 UI 최적화 (버튼 줄바꿈 방지 및 높이 통일)
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -51,7 +51,7 @@ st.markdown("""
         width: 100%; 
         border-radius: 8px; 
         font-weight: bold; 
-        white-space: nowrap !important; 
+        white-space: nowrap !important; /* 글자 줄바꿈 절대 방지 */
         display: flex;
         justify-content: center;
         align-items: center;
@@ -62,13 +62,12 @@ st.markdown("""
     .leaflet-popup-content { font-size: 14px !important; width: 250px !important; line-height: 1.6; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
 
-    /* [간격 줄이기] 사이드바 버튼 사이의 간격을 강제로 줄임 */
+    /* [추가] 사이드바 버튼 사이의 간격을 강제로 줄임 */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        gap: 3px !important; 
+        gap: 5px !important; 
     }
     </style>
     """, unsafe_allow_html=True)
-
 # ---------------------------------------------------------
 # [2] 사이드바: v122 UI 개선 레이아웃
 # ---------------------------------------------------------
