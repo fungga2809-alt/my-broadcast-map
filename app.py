@@ -55,21 +55,14 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 조준경 및 UI 스타일
+# [CSS] UI 스타일 (외부 조준경 CSS 제거, 순수 UI만 남김)
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     .leaflet-popup-content { font-size: 14px !important; width: 420px !important; line-height: 1.6; }
-    /* 지도 중앙 조준경 */
-    .crosshair {
-        position: absolute; top: 50%; left: 50%;
-        width: 40px; height: 40px; margin-left: -20px; margin-top: -45px;
-        z-index: 1000; pointer-events: none; border: 2px solid #ff4b4b; border-radius: 50%;
-    }
-    .crosshair::before { content: ''; position: absolute; top: 50%; left: -10px; right: -10px; height: 2px; background: #ff4b4b; }
-    .crosshair::after { content: ''; position: absolute; left: 50%; top: -10px; bottom: -10px; width: 2px; background: #ff4b4b; }
+    [data-testid="stDataFrame"] td { text-align: center !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -85,7 +78,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v281")
+    geolocator = Nominatim(user_agent="broadcasting_v285")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -176,33 +169,44 @@ with st.sidebar:
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 
-# [중요] NameError 해결을 위해 disp_df 정의
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-# 조준경 및 지도 출력
-map_container = st.container()
-with map_container:
-    st.markdown('<div class="crosshair"></div>', unsafe_allow_html=True)
-    m = folium.Map(location=sd.center, zoom_start=sd.zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
+m = folium.Map(location=sd.center, zoom_start=sd.zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
-    for _, r in disp_df.iterrows():
-        p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
-        p_html = f"<div style='width:400px; padding: 5px;'><b style='font-size:18px;'>[{r['구분']}] {r['이름']}</b><br><span style='color:gray;'>{r['주소']}</span><hr><b>📡 DTV:</b> {dt_pop}<br><b>✨ UHD:</b> {uh_pop}</div>"
-        folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
-        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=500)).add_to(m)
+# [수정] 조준경을 지도 iframe 내부에 직접 이식 (절대 벗어나지 않음)
+crosshair_html = """
+<style>
+.map-crosshair {
+    position: absolute; top: 50%; left: 50%;
+    margin-left: -20px; margin-top: -20px;
+    width: 40px; height: 40px;
+    border: 2px solid #ff4b4b; border-radius: 50%;
+    z-index: 9999; pointer-events: none;
+}
+.map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
+.map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
+</style>
+<div class="map-crosshair"></div>
+"""
+m.get_root().html.add_child(folium.Element(crosshair_html))
 
-    if sd.m_mode == "신규 등록" and sd.t_la:
-        folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
+for _, r in disp_df.iterrows():
+    p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
+    dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
+    p_html = f"<div style='width:400px; padding: 5px;'><b style='font-size:18px;'>[{r['구분']}] {r['이름']}</b><br><span style='color:gray;'>{r['주소']}</span><hr><b>📡 DTV:</b> {dt_pop}<br><b>✨ UHD:</b> {uh_pop}</div>"
+    folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
+    folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=500)).add_to(m)
 
-    map_data = st_folium(m, width="100%", height=700, key=f"map_v281_{sd.map_key}")
+if sd.m_mode == "신규 등록" and sd.t_la:
+    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-# 지도 이동 상태 업데이트 (튐 방지)
+# [수정] use_container_width=True 강제로 지도 찌그러짐 방지
+map_data = st_folium(m, use_container_width=True, height=700, key=f"map_v285_{sd.map_key}")
+
 if map_data:
     if map_data.get("center"): sd.center = [map_data["center"]["lat"], map_data["center"]["lng"]]
     if map_data.get("zoom"): sd.zoom = map_data["zoom"]
 
-# 지도 클릭 시
 if map_data and map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
