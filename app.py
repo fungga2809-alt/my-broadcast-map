@@ -5,6 +5,7 @@ from streamlit_folium import st_folium
 import os
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Broadcasting Infrastructure Master", layout="wide")
 DB = 'stations.csv'
@@ -29,7 +30,6 @@ def get_google_format(lat, lon):
             suffix = (("N" if deg >= 0 else "S") if is_lat else ("E" if deg >= 0 else "W"))
             return f"{d}°{m}'{s}\"{suffix}"
         except: return ""
-    
     lat_fmt = to_dms(lat, True)
     lon_fmt = to_dms(lon, False)
     return f"{lat_fmt} {lon_fmt}" if lat_fmt and lon_fmt else ""
@@ -88,13 +88,12 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     
-    # [버튼 균등 배치] 1:1:1 비율
     c_loc = st.columns([1, 1, 1], gap="small")
     with c_loc[0]:
         if st.button("📍검색"):
             if search_addr:
                 try:
-                    geolocator = Nominatim(user_agent="broadcasting_v235")
+                    geolocator = Nominatim(user_agent="broadcasting_v250")
                     loc = geolocator.geocode(search_addr)
                     if loc:
                         sd.center, sd.t_la, sd.t_lo = [loc.latitude, loc.longitude], loc.latitude, loc.longitude
@@ -115,12 +114,21 @@ with st.sidebar:
                 sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
-    sd.m_mode = st.radio("🛠️ 작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
+    
+    # 📋 정보 원클릭 복사 박스
+    st.subheader("📋 정보 원클릭 복사")
+    cur_lat = sd.t_la if sd.t_la is not None else sd.center[0]
+    cur_lon = sd.t_lo if sd.t_lo is not None else sd.center[1]
+    st.code(get_google_format(cur_lat, cur_lon), language=None)
+    st.code(sd.v_addr if sd.v_addr else "주소를 선택하세요", language=None)
+
+    st.divider()
+    sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
     
     f_df_sb = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df_sb['이름'].tolist()
 
-    # --- [섹션 1: 신규 등록] ---
+    # --- [섹션 1: 신규 등록 - 주소 API 연동] ---
     if sd.m_mode == "신규 등록":
         st.subheader("🆕 신규 시설 등록")
         reg_opts = ["+ 직접 입력(신규 등록)"] + existing_regs
@@ -128,56 +136,55 @@ with st.sidebar:
         final_reg = st.text_input("📝 새 지역 명칭 입력", "") if sel_reg_name == "+ 직접 입력(신규 등록)" else sel_reg_name
         v_nm = st.text_input("2. 시설 이름", value="")
         v_cat = st.radio("3. 시설 구분", ["송신소", "중계소"], horizontal=True)
-        sd.v_addr = st.text_area("4. 주소 등록", value=sd.v_addr)
         
+        # [도로명 주소 API]
+        st.write("4. 주소 등록 (API 검색)")
+        addr_api_query = st.text_input("주소 키워드 입력 (예: 해운대구로 1)", "")
+        if st.button("🏠 주소 자동 찾기"):
+            if addr_api_query:
+                try:
+                    geolocator = Nominatim(user_agent="broadcasting_v250")
+                    loc = geolocator.geocode(addr_api_query)
+                    if loc:
+                        sd.v_addr = loc.address
+                        sd.t_la, sd.t_lo = loc.latitude, loc.longitude
+                        sd.center = [loc.latitude, loc.longitude]
+                        st.success("주소와 좌표를 찾았습니다!")
+                        sd.map_key += 1; st.rerun()
+                except: st.error("주소 검색 실패")
+        sd.v_addr = st.text_area("상세 주소 확인/수정", value=sd.v_addr)
+
     # --- [섹션 2: 정보 수정] ---
     elif sd.m_mode == "정보 수정":
         st.subheader("⚙️ 시설 정보 수정")
         if names:
             sd.target_nm = st.selectbox("수정 대상 선택", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
-            
             v_nm = st.text_input("시설 이름", value=row['이름'])
             final_reg = st.text_input("지역 명칭", value=row['지역'])
             v_cat = st.radio("시설 구분", ["송신소", "중계소"], index=0 if row['구분']=="송신소" else 1, horizontal=True)
-            # [수정] 주소 수정 기능 명시적 추가
             sd.v_addr = st.text_area("시설 주소 수정", value=str(row['주소']))
             
             if sd.last_loaded_nm != sd.target_nm:
                 sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
-                for s in SL: sd[f"ch_{s}"] = str(row[s])
                 sd.last_loaded_nm = sd.target_nm
-        else:
-            st.warning("데이터 없음"); final_reg, v_cat, v_nm = "", "중계소", ""
+            
+            c_la, c_lo = st.columns(2)
+            sd.t_la = c_la.number_input("위도 수정(Dec)", value=float(sd.t_la), format="%.6f")
+            sd.t_lo = c_lo.number_input("경도 수정(Dec)", value=float(sd.t_lo), format="%.6f")
+        else: st.warning("데이터 없음"); final_reg, v_cat, v_nm = "", "중계소", ""
 
     # --- [섹션 3: 데이터 삭제] ---
     elif sd.m_mode == "데이터 삭제":
         st.subheader("🗑️ 데이터 삭제")
         if names:
-            del_target = st.selectbox("삭제할 시설 선택", names)
+            del_target = st.selectbox("삭제 시설 선택", names)
             if st.button("🚨 삭제 실행", type="primary"):
                 sd.history.append(sd.df.copy()); sd.df = sd.df[sd.df['이름'] != del_target]; sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
-    # --- [공통: 좌표 및 채널 기술 정보] ---
+    # --- [공통: 채널 설정 및 저장] ---
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider()
-        st.subheader("📋 정보 원클릭 복사")
-        cur_lat = sd.t_la if sd.t_la is not None else sd.center[0]
-        cur_lon = sd.t_lo if sd.t_lo is not None else sd.center[1]
-        
-        st.caption("📍 구글 지도용 통합 좌표")
-        st.code(get_google_format(cur_lat, cur_lon), language=None)
-        
-        st.caption("📝 시설 상세 주소")
-        st.code(sd.v_addr if sd.v_addr else "주소를 입력하세요", language=None)
-        
-        st.divider()
-        st.subheader("📍 좌표 수정 (직접 입력 가능)")
-        c_la, c_lo = st.columns(2)
-        # [수정] 정보 수정 시에도 이 입력창을 통해 좌표 수정 가능
-        sd.t_la = c_la.number_input("위도(Dec)", value=float(cur_lat), format="%.6f")
-        sd.t_lo = c_lo.number_input("경도(Dec)", value=float(cur_lon), format="%.6f")
-
         st.info("📺 물리 채널 설정")
         st.markdown("**📡 DTV 채널**")
         d_cols = st.columns(3)
@@ -189,12 +196,12 @@ with st.sidebar:
         if st.button("✅ 데이터 저장"):
             if v_nm and final_reg:
                 sd.history.append(sd.df.copy())
-                # 현재 입력창(sd.t_la, sd.t_lo, sd.v_addr)의 값을 그대로 저장
-                v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(sd.t_la), str(sd.t_lo), sd.v_addr]
+                save_la = str(sd.t_la if sd.t_la is not None else cur_lat)
+                save_lo = str(sd.t_lo if sd.t_lo is not None else cur_lon)
+                v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [save_la, save_lo, sd.v_addr]
                 if sd.m_mode == "정보 수정" and sd.target_nm:
                     idx = sd.df[sd.df['이름'] == sd.target_nm].index[0]; sd.df.loc[idx] = v
-                else:
-                    sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+                else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
                 sd.t_la, sd.t_lo, sd.target_nm, sd.last_loaded_nm, sd.v_addr = None, None, None, None, ""
                 st.success("저장 완료!"); st.rerun()
@@ -210,15 +217,14 @@ m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/
 for _, r in disp_df.iterrows():
     try:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-        google_fmt = get_google_format(r['위도'], r['경도'])
-        p_html = f"<div style='width:260px;'><b>[{r['구분']}] {r['이름']}</b><br><span style='color:gray; font-size:12px;'>{r['주소']}</span><hr><b>통합 좌표:</b><br>{google_fmt}<br><b>DTV:</b> {'|'.join([f'{s}:{r[s]}' for s in SL_DTV])}</div>"
+        p_html = f"<div style='width:260px;'><b>[{r['구분']}] {r['이름']}</b><br><span style='color:gray; font-size:12px;'>{r['주소']}</span><hr><b>통합 좌표:</b><br>{get_google_format(r['위도'], r['경도'])}<br><b>DTV:</b> {'|'.join([f'{s}:{r[s]}' for s in SL_DTV])}</div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);pointer-events:none;">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=300)).add_to(m)
     except: pass
 
 if sd.t_la is not None: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v235_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v250_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
