@@ -43,7 +43,7 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# [수정] 롤백 방지를 위해 단일 center 변수 사용
+# 세션 상태 초기화
 defaults = {
     'center': [35.1796, 129.0756], 'zoom': 14, 't_la': None, 't_lo': None, 
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
@@ -55,7 +55,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 사이드바 및 UI 고정 (팝업 CSS는 지도 내부에 주입)
+# [CSS] UI 스타일
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -77,7 +77,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v305")
+    geolocator = Nominatim(user_agent="broadcasting_v310")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -128,7 +128,7 @@ with st.sidebar:
     prev_mode = sd.m_mode
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
     if prev_mode != sd.m_mode and sd.m_mode != "신규 등록":
-        sd.t_la, sd.t_lo = None, None  # 신규 등록 모드가 아니면 임시 좌표 삭제
+        sd.t_la, sd.t_lo = None, None  
 
     if sd.m_mode == "신규 등록":
         st.subheader("🆕 신규 시설 등록")
@@ -199,10 +199,9 @@ disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_r
 
 map_container = st.container()
 with map_container:
-    # 지도 내부 조준경 및 팝업 CSS 강제 주입
+    # [수정] 팝업창의 너비가 절대 줄어들지 않도록 물리적 CSS 강제 주입
     crosshair_and_popup_css = """
     <style>
-    /* 조준경 */
     .map-crosshair {
         position: absolute; top: 50%; left: 50%;
         margin-left: -20px; margin-top: -20px;
@@ -213,9 +212,9 @@ with map_container:
     .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
     .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
     
-    /* [핵심] 팝업창 강제 너비 확장 */
-    .leaflet-popup-content-wrapper { min-width: 460px !important; }
-    .leaflet-popup-content { width: 450px !important; min-width: 450px !important; margin: 15px !important; }
+    /* 팝업 강제 확장 옵션 */
+    .leaflet-popup-content-wrapper { min-width: 470px !important; width: 470px !important; }
+    .leaflet-popup-content { min-width: 450px !important; width: 450px !important; margin: 13px !important; }
     </style>
     <div class="map-crosshair"></div>
     """
@@ -226,30 +225,40 @@ with map_container:
     for _, r in disp_df.iterrows():
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
         dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
-        p_html = f"<div style='width:430px; padding: 5px;'><b style='font-size:18px;'>[{r['구분']}] {r['이름']}</b><br><span style='color:gray;'>{r['주소']}</span><hr><b>📡 DTV:</b> {dt_pop}<br><b>✨ UHD:</b> {uh_pop}</div>"
+        
+        # [수정] 사진(image_076522)과 완벽하게 동일한 팝업 디자인 적용 (가로선 제거, 행 분리)
+        p_html = f"""
+        <div style='font-family: sans-serif; padding-top: 5px;'>
+            <div style='font-size:18px; font-weight:bold; color:#333; margin-bottom:4px;'>[{r['구분']}] {r['이름']}</div>
+            <div style='color:#666; font-size:13px; margin-bottom:12px;'>{r['주소']}</div>
+            <div style='font-size:15px; margin-bottom:6px;'>
+                <b>📡 DTV:</b> {dt_pop}
+            </div>
+            <div style='font-size:15px;'>
+                <b>✨ UHD:</b><br>{uh_pop}
+            </div>
+        </div>
+        """
         
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
-        # [수정] min_width와 max_width를 모두 적용하여 축소 방지
-        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=450, max_width=500)).add_to(m)
+        # min_width=450을 명시적으로 선언하여 Folium 단에서도 축소 방지
+        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=450, max_width=450)).add_to(m)
 
-    # 신규 등록 모드에서 버튼을 누른 경우에만 녹색 마커 표시
-    if sd.m_mode == "신규 등록" and sd.t_la is not None:
-        folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
+    # [중요] 불필요한 녹색 신규 마커(folium.Marker) 코드 완전 삭제! 오직 십자 조준경만 사용.
 
-    # [수정] 지도 세로 높이 900으로 확장
     map_data = st_folium(
         m, 
         use_container_width=True, 
         height=900, 
-        key=f"map_v305_{sd.map_key}",
+        key=f"map_v310_{sd.map_key}",
         returned_objects=["center", "zoom"]
     )
 
-# [핵심] 지도 롤백 방지: 움직인 좌표를 실시간으로 session_state.center에 덮어씌움
-if map_data:
-    if map_data.get("center"):
+# [핵심] 지도 롤백 방지용 이중 동기화
+if map_data is not None:
+    if "center" in map_data and map_data["center"] is not None:
         sd.center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-    if map_data.get("zoom"):
+    if "zoom" in map_data and map_data["zoom"] is not None:
         sd.zoom = map_data["zoom"]
 
 st.divider()
