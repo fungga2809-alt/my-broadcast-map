@@ -43,9 +43,9 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# 세션 상태 초기화
+# 세션 상태 초기화 (지도 중심 및 확대 배율 저장 추가)
 defaults = {
-    'center': [35.1796, 129.0756], 't_la': None, 't_lo': None, 
+    'center': [35.1796, 129.0756], 'zoom': 14, 't_la': None, 't_lo': None, 
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
     'm_mode': "신규 등록", 'target_nm': None, 'last_loaded_nm': None, 'v_addr': ""
 }
@@ -55,18 +55,32 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS]
+# [CSS] 조준경 UI 및 팝업 스타일
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     .leaflet-popup-content { font-size: 14px !important; width: 420px !important; line-height: 1.6; }
+    
+    /* 지도 중앙 조준경 스타일 */
+    .crosshair {
+        position: absolute; top: 50%; left: 50%;
+        width: 40px; height: 40px;
+        margin-left: -20px; margin-top: -45px; /* 마커 바닥 위치 보정 */
+        z-index: 1000; pointer-events: none;
+        border: 2px solid #ff4b4b; border-radius: 50%;
+    }
+    .crosshair::before, .crosshair::after {
+        content: ''; position: absolute; background: #ff4b4b;
+    }
+    .crosshair::before { top: 50%; left: -10px; right: -10px; height: 2px; }
+    .crosshair::after { left: 50%; top: -10px; bottom: -10px; width: 2px; }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바
+# [2] 사이드바: 관제 도구
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -77,8 +91,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    
-    geolocator = Nominatim(user_agent="broadcasting_v275")
+    geolocator = Nominatim(user_agent="broadcasting_v280")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -95,7 +108,7 @@ with st.sidebar:
             if gps and 'coords' in gps:
                 p = [gps['coords']['latitude'], gps['coords']['longitude']]
                 sd.center, sd.t_la, sd.t_lo = p, p[0], p[1]
-                try: # 내 위치 주소 역추적
+                try:
                     rev = geolocator.reverse(f"{p[0]}, {p[1]}")
                     if rev: sd.v_addr = rev.address
                 except: pass
@@ -104,6 +117,17 @@ with st.sidebar:
         if st.button("↩️복구"):
             if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
+    # --- [핵심 추가] 중앙 위치 획득 버튼 ---
+    st.divider()
+    if st.button("🎯 지도 중앙을 등록 위치로 지정", type="primary"):
+        # sd.center는 지도를 움직일 때마다 업데이트됨 (하단 st_folium 로직 참고)
+        sd.t_la, sd.t_lo = sd.center[0], sd.center[1]
+        try:
+            rev = geolocator.reverse(f"{sd.t_la}, {sd.t_lo}")
+            if rev: sd.v_addr = rev.address
+        except: pass
+        sd.m_mode = "신규 등록"; st.rerun()
+
     st.divider()
     
     # 📋 정보 원클릭 복사
@@ -111,21 +135,18 @@ with st.sidebar:
     cur_la = sd.t_la if sd.t_la is not None else sd.center[0]
     cur_lo = sd.t_lo if sd.t_lo is not None else sd.center[1]
     st.code(get_google_format(cur_la, cur_lo), language=None)
-    st.code(sd.v_addr if sd.v_addr else "주소를 선택하세요", language=None)
+    st.code(sd.v_addr if sd.v_addr else "위치를 지정하세요", language=None)
 
     st.divider()
-    prev_mode = sd.m_mode
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
-    if prev_mode != sd.m_mode and sd.m_mode != "신규 등록": sd.t_la, sd.t_lo = None, None
 
     if sd.m_mode == "신규 등록":
         st.subheader("🆕 신규 시설 등록")
-        reg_opts = ["+ 직접 입력(신규 등록)"] + existing_regs
+        reg_opts = ["+ 직접 입력"] + existing_regs
         sel_reg = st.selectbox("1. 지역 선택", reg_opts)
-        final_reg = st.text_input("📝 새 지역 명칭", "") if sel_reg == "+ 직접 입력(신규 등록)" else sel_reg
-        v_nm = st.text_input("2. 시설 이름", value="")
+        final_reg = st.text_input("📝 새 지역 명칭", "") if sel_reg == "+ 직접 입력" else sel_reg
+        v_nm = st.text_input("2. 시설 이름")
         v_cat = st.radio("3. 시설 구분", ["송신소", "중계소"], horizontal=True)
-        # 클릭으로 자동 입력된 주소가 여기에 표시됨
         sd.v_addr = st.text_area("4. 주소 확인/수정", value=sd.v_addr)
 
     elif sd.m_mode == "정보 수정":
@@ -163,33 +184,44 @@ with st.sidebar:
 # [3] 본문
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
-disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
+# 조준경 컨테이너
+map_container = st.container()
+with map_container:
+    # 지도 위에 조준경 띄우기
+    st.markdown('<div class="crosshair"></div>', unsafe_allow_html=True)
+    
+    m = folium.Map(location=sd.center, zoom_start=sd.zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
-for _, r in disp_df.iterrows():
-    p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-    dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
-    p_html = f"<div style='width:400px; padding: 5px;'><b style='font-size:18px;'>[{r['구분']}] {r['이름']}</b><br><span style='color:gray;'>{r['주소']}</span><hr><b>📡 DTV:</b> {dt_pop}<br><b>✨ UHD:</b> {uh_pop}</div>"
-    folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
-    folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=500)).add_to(m)
+    for _, r in disp_df.iterrows():
+        p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
+        dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
+        p_html = f"<div style='width:400px; padding: 5px;'><b style='font-size:18px;'>[{r['구분']}] {r['이름']}</b><br><span style='color:gray;'>{r['주소']}</span><hr><b>📡 DTV:</b> {dt_pop}<br><b>✨ UHD:</b> {uh_pop}</div>"
+        folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
+        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=500)).add_to(m)
 
-# [개선] 신규 마커 표시 로직 강화
-if sd.m_mode == "신규 등록" and sd.t_la:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa'), tooltip="신규 등록 지점").add_to(m)
+    if sd.m_mode == "신규 등록" and sd.t_la:
+        folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v275_{sd.map_key}")
+    map_data = st_folium(m, width="100%", height=700, key=f"map_v280_{sd.map_key}")
 
-# [개선] 지도 클릭 시 주소 역추적 자동화
-if map_data.get("last_clicked"):
+# [중요] 지도 이동 시 상태 업데이트 (튐 방지 및 센터 캡처용)
+if map_data:
+    if map_data.get("center"):
+        sd.center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+    if map_data.get("zoom"):
+        sd.zoom = map_data["zoom"]
+
+# 지도 클릭 시 (기존 기능 유지)
+if map_data and map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo
-        try: # 클릭한 위치의 주소를 자동으로 가져옴
+        try:
             rev = geolocator.reverse(f"{cla}, {clo}")
             if rev: sd.v_addr = rev.address
         except: pass
-        sd.m_mode, sd.map_key = "신규 등록", sd.map_key + 1; st.rerun()
+        sd.m_mode = "신규 등록"; st.rerun()
 
 st.divider()
 st.subheader("📊 데이터 현황")
