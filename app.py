@@ -40,18 +40,18 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] v122 UI 최적화 (버튼 줄바꿈 방지 및 중앙 정렬)
+# [CSS] v122 UI 최적화 (버튼 줄바꿈 방지 및 높이 통일)
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
     
-    /* 버튼 스타일 최적화: 글자 안 잘리게 한 줄 고정 */
+    /* 버튼 스타일 최적화 */
     .stButton > button { 
         width: 100%; 
         border-radius: 8px; 
         font-weight: bold; 
-        white-space: nowrap !important; 
+        white-space: nowrap !important; /* 글자 줄바꿈 절대 방지 */
         display: flex;
         justify-content: center;
         align-items: center;
@@ -65,7 +65,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v122 UI (내 위치/되돌리기 버튼 최적화)
+# [2] 사이드바: v122 UI 개선 레이아웃
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -78,7 +78,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_master_v122")
+                geolocator = Nominatim(user_agent="broadcasting_v122")
                 loc = geolocator.geocode(search_addr)
                 if loc:
                     sd.center = [loc.latitude, loc.longitude]
@@ -87,7 +87,7 @@ with st.sidebar:
                     sd.map_key += 1; st.rerun()
             except: st.error("검색 오류")
 
-    # 버튼 한 줄 배치 (v122의 핵심)
+    # [v122 수정] 버튼 간격 및 비율 최적화
     c1, c2 = st.columns([1, 1.2], gap="small") 
     with c1:
         if st.button("🎯 내 위치"):
@@ -106,7 +106,7 @@ with st.sidebar:
 
     st.divider()
 
-    # 모드 및 데이터 로딩
+    # 모드 설정 및 데이터 로드
     sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
@@ -128,17 +128,16 @@ with st.sidebar:
 
     st.text_input("지역 명칭", key="v_reg")
     sd["v_cat"] = st.radio("시설 구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1)
-    st.text_input("시설 명칭", key="v_nm")
+    st.text_input("송신소/중계소 이름", key="v_nm")
     
-    # 좌표 입력
+    # 좌표 입력 (지도 클릭과 연동)
     disp_la = float(sd.t_la if sd.t_la is not None else sd.center[0])
     disp_lo = float(sd.t_lo if sd.t_lo is not None else sd.center[1])
-    la_v = st.number_input("위도", value=disp_la, format="%.6f", key="inp_la")
-    lo_v = st.number_input("경도", value=disp_lo, format="%.6f", key="inp_lo")
-    if la_v != disp_la or lo_v != disp_lo:
-        sd.t_la, sd.t_lo = la_v, lo_v
+    new_la = st.number_input("위도", value=disp_la, format="%.6f")
+    new_lo = st.number_input("경도", value=disp_lo, format="%.6f")
+    if new_la != disp_la or new_lo != disp_lo:
+        sd.t_la, sd.t_lo = new_la, new_lo
 
-    # 채널 설정 (v70 그룹화)
     st.subheader("📺 물리 채널 설정")
     st.info("📡 **DTV 채널**")
     d_cols = st.columns(3)
@@ -184,16 +183,16 @@ if sd.t_la is not None:
 
 map_data = st_folium(m, width="100%", height=700, key=f"map_v122_{sd.map_key}")
 
-# v70 순정 클릭 로직 (가장 확실한 마커 이동)
+# v70 순정 클릭 로직 (마커 이동 자유)
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo
         sd.m_mode, sd.target_nm, sd.last_loaded_nm = "새로 등록", None, "NEW"
-        sd.map_key += 1; st.rerun()
+        st.rerun()
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 표 (v118 디자인 - 색상 구분 및 중앙 정렬)
+# [4] 하단: 데이터 표 (색상 및 중앙 정렬 강화)
 # ---------------------------------------------------------
 st.divider()
 def style_table(row):
@@ -202,7 +201,7 @@ def style_table(row):
     return ['background-color: #e3f2fd; color: #1976d2; text-align: center;'] * len(row)
 
 styled_df = disp_df[CL].style.apply(style_table, axis=1)
-column_cfg = {"이름": st.column_config.TextColumn("📡 시설 명칭", alignment="center", width="medium")}
+column_cfg = {"이름": st.column_config.TextColumn("📡 송신소/중계소 이름", alignment="center", width="medium")}
 for c in CL: 
     if c != "이름": column_cfg[c] = st.column_config.TextColumn(c, alignment="center")
 
@@ -216,4 +215,4 @@ if event and event.get("selection", {}).get("rows"):
         sd.t_la, sd.t_lo = None, None
         sd.map_key += 1; st.rerun()
 
-st.download_button("📥 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
+st.download_button("📥 전체 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
