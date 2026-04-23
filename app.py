@@ -17,20 +17,18 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 sd = st.session_state
 
-# [신규 도구] 구글어스 DMS 형식을 십진수 좌표로 변환하는 함수
+# [도구] DMS 형식을 십진수 좌표로 변환
 def parse_dms_to_decimal(dms_str):
     try:
-        # 도(°), 분('), 초("), 방위(NSEW) 추출 정규식
         pattern = r"(\d+)°(\d+)'([\d.]+)\"([NSEW])"
         matches = re.findall(pattern, dms_str)
         if len(matches) != 2: return None, None
-        
         results = []
         for d, m, s, direction in matches:
             decimal = float(d) + float(m)/60 + float(s)/3600
             if direction in ['S', 'W']: decimal *= -1
             results.append(decimal)
-        return results[0], results[1] # [위도, 경도] 반환
+        return results[0], results[1]
     except: return None, None
 
 def get_google_format(lat, lon):
@@ -79,23 +77,38 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] v420 디자인 복구 + 좌표 버튼 최적화
+# [CSS] 사이드바 배경 및 수직 버튼 동일 크기 튜닝
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
-    [data-testid="stSidebar"] { background-color: #ced4da !important; }
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type { gap: 5px !important; }
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button {
-        width: 100% !important; padding: 15px 0 !important; font-size: 16px !important;
-        background-color: #f8f9fa !important; border: 2px solid #adb5bd !important;
-        border-radius: 10px !important; color: #212529 !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important; transition: all 0.2s ease-in-out !important;
+    
+    /* 사이드바 배경색 (v420 다크 그레이) */
+    [data-testid="stSidebar"] {
+        background-color: #ced4da !important;
     }
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button:hover { background-color: #e2e6ea !important; transform: translateY(-2px) !important; }
-    div[data-testid="stNumberInput"] button { min-width: 50px !important; height: 50px !important; }
-    div[data-testid="stNumberInput"] input { height: 50px !important; font-size: 20px !important; font-weight: bold !important; }
+    
+    /* 🔥 [핵심] 위치 제어 버튼 수직형 대형화 디자인 */
+    /* 텍스트 입력창 바로 아래의 버튼들만 타겟팅 */
+    [data-testid="stSidebar"] div.stButton button {
+        width: 100% !important;
+        height: 60px !important; /* 세 버튼 모두 동일한 높이 부여 */
+        margin-bottom: 8px !important; /* 버튼 사이 간격 */
+        font-size: 18px !important;
+        background-color: #f8f9fa !important;
+        border: 2px solid #adb5bd !important;
+        border-radius: 12px !important;
+        color: #212529 !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+    [data-testid="stSidebar"] div.stButton button:hover {
+        background-color: #e2e6ea !important;
+        transform: translateY(-2px) !important;
+    }
+    
+    /* 3색 액션 버튼 (적/청/녹) 색상 유지 */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
@@ -113,33 +126,37 @@ with st.sidebar:
 
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색")
-    c_loc = st.columns([1, 1, 1]); geolocator = Nominatim(user_agent="broadcasting_v440")
-    with c_loc[0]:
-        if st.button("🔍 검색"):
-            if search_addr:
-                try:
-                    loc = geolocator.geocode(search_addr)
-                    if loc:
-                        sd.base_center, sd.base_zoom = [loc.latitude, loc.longitude], 16
-                        sd.in_t_la, sd.in_t_lo, sd.in_v_addr = loc.latitude, loc.longitude, clean_kr_address(loc.address)
-                        sd.map_key += 1; st.rerun()
-                except: st.error("오류")
-    with c_loc[1]:
-        if st.button("🧭 내위치"):
-            gps = get_geolocation()
-            if gps and 'coords' in gps:
-                p = [gps['coords']['latitude'], gps['coords']['longitude']]
-                sd.base_center, sd.base_zoom, sd.in_t_la, sd.in_t_lo = [p[0], p[1]], 16, p[0], p[1]
-                try:
-                    rev = geolocator.reverse(f"{p[0]}, {p[1]}")
-                    if rev: sd.in_v_addr = clean_kr_address(rev.address)
-                except: pass
-                sd.map_key += 1; st.rerun()
-    with c_loc[2]:
-        if st.button("↩️ 복구"):
-            if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
+    
+    # 🔥 [변경 사항] 버튼 3개를 수직으로 배치 (순서: 검색 -> 내위치 -> 복구)
+    geolocator = Nominatim(user_agent="broadcasting_v450")
+    
+    if st.button("🔍 검색"):
+        if search_addr:
+            try:
+                loc = geolocator.geocode(search_addr)
+                if loc:
+                    sd.base_center, sd.base_zoom = [loc.latitude, loc.longitude], 16
+                    sd.in_t_la, sd.in_t_lo, sd.in_v_addr = loc.latitude, loc.longitude, clean_kr_address(loc.address)
+                    sd.map_key += 1; st.rerun()
+            except: st.error("오류")
+
+    if st.button("🧭 내 위치"):
+        gps = get_geolocation()
+        if gps and 'coords' in gps:
+            p = [gps['coords']['latitude'], gps['coords']['longitude']]
+            sd.base_center, sd.base_zoom, sd.in_t_la, sd.in_t_lo = [p[0], p[1]], 16, p[0], p[1]
+            try:
+                rev = geolocator.reverse(f"{p[0]}, {p[1]}")
+                if rev: sd.in_v_addr = clean_kr_address(rev.address)
+            except: pass
+            sd.map_key += 1; st.rerun()
+
+    if st.button("↩️ 복구"):
+        if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
+    
+    # 3색 핵심 컨트롤
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 지도 중앙을 신규 위치로 지정"):
         sd.m_mode = "신규 등록"; sd.target_nm, sd.last_loaded_nm = None, None
@@ -178,6 +195,11 @@ with st.sidebar:
                 st.success("등록 완료!"); st.rerun()
 
     st.divider()
+    st.subheader("📋 정보 원클릭 복사")
+    st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language=None)
+    st.code(sd.in_v_addr if sd.in_v_addr else "위치를 지정하세요", language=None)
+
+    st.divider()
     mode_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     selected_mode = st.radio("🛠️ 현재 작업 모드 상태", mode_opts, index=mode_opts.index(sd.m_mode), horizontal=True)
     if selected_mode != sd.m_mode:
@@ -191,7 +213,6 @@ with st.sidebar:
         if sd.in_reg_box == "+ 직접 입력": st.text_input("📝 새 지역 명칭", key="in_reg_direct")
         st.text_input("2. 시설 이름", key="in_v_nm")
         st.radio("3. 시설 구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
-        
         st.info("🏠 주소 및 좌표 설정")
         addr_api_query = st.text_input("4. 주소 검색(API)")
         if st.button("🏠 주소 자동 찾기"):
@@ -204,19 +225,10 @@ with st.sidebar:
                         sd.map_key += 1; st.rerun()
                 except: st.error("검색 실패")
         st.text_area("5. 주소 확인/수정", key="in_v_addr")
-        
-        # 🔥 [핵심 신기능] 구글어스 DMS 통합 좌표 입력 칸
-        dms_input = st.text_input("6. DMS 통합 좌표 기입 (Google Earth 형식)", placeholder="예: 35°33'27.49\"N 129°15'14.23\"E")
+        dms_input = st.text_input("6. 구글어스 DMS 통합 좌표 붙여넣기", placeholder="예: 35°33'27.49\"N 129°15'14.23\"E")
         if dms_input:
             la_parsed, lo_parsed = parse_dms_to_decimal(dms_input)
-            if la_parsed:
-                sd.in_t_la, sd.in_t_lo = la_parsed, lo_parsed
-                sd.base_center = [la_parsed, lo_parsed]
-                st.success("DMS 좌표가 성공적으로 변환되었습니다!")
-
-        c_la, c_lo = st.columns(2)
-        c_la.number_input("7. 위도(Dec)", format="%.6f", key="in_t_la", step=0.0001)
-        c_lo.number_input("8. 경도(Dec)", format="%.6f", key="in_t_lo", step=0.0001)
+            if la_parsed: sd.in_t_la, sd.in_t_lo, sd.base_center = la_parsed, lo_parsed, [la_parsed, lo_parsed]
 
     elif sd.m_mode == "정보 수정":
         st.subheader("⚙️ 시설 정보 수정")
@@ -232,16 +244,11 @@ with st.sidebar:
             st.text_input("시설 이름", key="in_v_nm"); st.text_input("지역 명칭", key="in_reg_direct")
             st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
             st.text_area("주소 수정", key="in_v_addr")
-            
-            # 정보 수정 시에도 DMS 입력 지원
             dms_input_edit = st.text_input("DMS 통합 좌표로 위치 변경", placeholder="구글어스 좌표를 붙여넣으세요")
             if dms_input_edit:
                 la_p, lo_p = parse_dms_to_decimal(dms_input_edit)
                 if la_p: sd.in_t_la, sd.in_t_lo, sd.base_center = la_p, lo_p, [la_p, lo_p]
-
-            c_la, c_lo = st.columns(2)
-            c_la.number_input("위도(Dec)", format="%.6f", key="in_t_la", step=0.0001)
-            c_lo.number_input("경도(Dec)", format="%.6f", key="in_t_lo", step=0.0001)
+        else: st.warning("데이터 없음")
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider(); st.info("📺 물리 채널 설정")
@@ -267,7 +274,7 @@ with map_container:
         p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div></div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v440_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v450_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
