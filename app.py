@@ -40,32 +40,36 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] v122 UI 최적화 (버튼 줄바꿈 방지 및 높이 통일)
-st.markdown("""
+# ---------------------------------------------------------
+# [CSS] 전문가용 버튼 커스텀 설정 (여기서 숫자를 조절하세요!)
+# ---------------------------------------------------------
+st.markdown(f"""
     <style>
-    html, body, [class*="css"] { font-size: 18px !important; }
-    th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
+    html, body, [class*="css"] {{ font-size: 18px !important; }}
+    th {{ text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }}
     
-    /* 버튼 스타일 최적화 */
-    .stButton > button { 
+    /* [버튼 커스텀 영역] */
+    .stButton > button {{ 
         width: 100%; 
-        border-radius: 8px; 
+        border-radius: 10px;        /* 테두리 곡률 */
         font-weight: bold; 
-        white-space: nowrap !important; /* 글자 줄바꿈 절대 방지 */
+        font-size: 16px !important; /* 버튼 글자 크기 */
+        white-space: nowrap !important; 
         display: flex;
         justify-content: center;
         align-items: center;
-        padding: 0.5rem 0.2rem !important;
-        min-height: 45px;
-    }
+        padding: 0.7rem 0.5rem !important; /* 버튼 위아래/좌우 여백 (숫자 키우면 버튼이 커짐) */
+        min-height: 50px;           /* 버튼 최소 높이 */
+        box-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+    }}
     
-    .leaflet-popup-content { font-size: 14px !important; width: 250px !important; line-height: 1.6; }
-    [data-testid="stDataFrame"] td { text-align: center !important; }
+    .leaflet-popup-content {{ font-size: 14px !important; width: 250px !important; line-height: 1.6; }}
+    [data-testid="stDataFrame"] td {{ text-align: center !important; }}
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: v122 UI 개선 레이아웃
+# [2] 사이드바: 버튼 위치 제어 (Columns 비율)
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -75,10 +79,12 @@ with st.sidebar:
 
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
+    
+    # 1. 위치 검색 버튼 (상단 단독 배치 또는 비율 조정 가능)
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_v122")
+                geolocator = Nominatim(user_agent="broadcasting_master_v127")
                 loc = geolocator.geocode(search_addr)
                 if loc:
                     sd.center = [loc.latitude, loc.longitude]
@@ -87,7 +93,8 @@ with st.sidebar:
                     sd.map_key += 1; st.rerun()
             except: st.error("검색 오류")
 
-    # [v122 수정] 버튼 간격 및 비율 최적화
+    # 2. 내 위치 & 되돌리기 버튼 (가로 위치 및 크기 비율 조정)
+    # [1, 1.2] 숫자를 [1, 1]로 바꾸면 똑같은 크기, [0.8, 1.2]로 바꾸면 되돌리기가 더 길어짐
     c1, c2 = st.columns([1, 1.2], gap="small") 
     with c1:
         if st.button("🎯 내 위치"):
@@ -106,7 +113,7 @@ with st.sidebar:
 
     st.divider()
 
-    # 모드 설정 및 데이터 로드
+    # 모드 설정 및 데이터 로드 (v122 안정 로직)
     sd.m_mode = st.radio("📍 모드 설정", ["새로 등록", "정보 수정"], index=0 if sd.m_mode == "새로 등록" else 1, horizontal=True)
     f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df['이름'].tolist()
@@ -130,14 +137,15 @@ with st.sidebar:
     sd["v_cat"] = st.radio("시설 구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1)
     st.text_input("송신소/중계소 이름", key="v_nm")
     
-    # 좌표 입력 (지도 클릭과 연동)
+    # 좌표 입력
     disp_la = float(sd.t_la if sd.t_la is not None else sd.center[0])
     disp_lo = float(sd.t_lo if sd.t_lo is not None else sd.center[1])
-    new_la = st.number_input("위도", value=disp_la, format="%.6f")
-    new_lo = st.number_input("경도", value=disp_lo, format="%.6f")
-    if new_la != disp_la or new_lo != disp_lo:
-        sd.t_la, sd.t_lo = new_la, new_lo
+    la_v = st.number_input("위도", value=disp_la, format="%.6f", key="inp_la")
+    lo_v = st.number_input("경도", value=disp_lo, format="%.6f", key="inp_lo")
+    if la_v != disp_la or lo_v != disp_lo:
+        sd.t_la, sd.t_lo = la_v, lo_v
 
+    # 채널 설정 (v70 그룹화)
     st.subheader("📺 물리 채널 설정")
     st.info("📡 **DTV 채널**")
     d_cols = st.columns(3)
@@ -159,7 +167,7 @@ with st.sidebar:
             st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도 (v70 팝업 및 명칭 강조)
+# [3] 본문: 지도 및 데이터 현황 (디자인 유지)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -181,19 +189,17 @@ for _, r in disp_df.iterrows():
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v122_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v127_{sd.map_key}")
 
-# v70 순정 클릭 로직 (마커 이동 자유)
+# v70 순정 클릭 로직 (안정 버전)
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
         sd.t_la, sd.t_lo = cla, clo
         sd.m_mode, sd.target_nm, sd.last_loaded_nm = "새로 등록", None, "NEW"
-        st.rerun()
+        sd.map_key += 1; st.rerun()
 
-# ---------------------------------------------------------
-# [4] 하단: 데이터 표 (색상 및 중앙 정렬 강화)
-# ---------------------------------------------------------
+# [하단 데이터 표]
 st.divider()
 def style_table(row):
     if row['구분'] == '송신소':
