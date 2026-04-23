@@ -66,7 +66,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] Streamlit의 철벽 같은 간격 설정을 강제로 뚫어내는 CSS
+# [CSS] 레이아웃 정밀 타겟팅 (전체 여백을 망가뜨렸던 속성 제거)
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -79,19 +79,20 @@ st.markdown("""
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
     
-    /* 🔥 [핵심] 사이드바 내부 3단 컬럼의 갭(Gap) 완전 파괴 */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        gap: 3px !important; /* 원래 16px(1rem)이던 갭을 3px로 압축! */
+    /* 🔥 [핵심] 오직 사이드바의 첫 번째 버튼 컬럼(검색/내위치/복구)만 정밀 타겟팅 */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type {
+        gap: 5px !important; /* ___ 형태로 간격 축소 */
     }
-    /* 컬럼 내부 패딩 제거 및 너비 강제 할당 */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] > [data-testid="column"] {
-        padding: 0 !important;
-        min-width: 30% !important;
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div[data-testid="column"] {
+        flex: 1 1 calc(33.33% - 5px) !important;
+        width: 33.33% !important;
+        min-width: 0 !important;
     }
-    /* 좁아진 버튼 글자가 짤리지 않도록 내부 여백 최적화 */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button {
-        padding: 0 2px !important; 
-        font-size: 15px !important;
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button {
+        width: 100% !important; /* 간격이 줄어든 만큼 버튼이 꽉 차게 늘어남 */
+        padding: 0 4px !important; /* 버튼 안쪽 여백 조절 */
+        font-size: 16px !important;
+        letter-spacing: -0.5px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -107,11 +108,13 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
 
     st.subheader("🔍 위치 제어")
+    
+    # [복구] 검색 칸 가독성 및 디자인 완벽 유지
     search_addr = st.text_input("주소/건물명 검색")
     
-    # 여기서 만들어지는 3개의 열이 CSS의 타겟이 되어 바짝 붙습니다.
+    # 이 첫 번째 컬럼이 CSS로 정밀 타겟팅되어 간격은 좁고 버튼은 커집니다.
     c_loc = st.columns([1, 1, 1]) 
-    geolocator = Nominatim(user_agent="broadcasting_v390")
+    geolocator = Nominatim(user_agent="broadcasting_v395")
 
     with c_loc[0]:
         if st.button("🔍 검색"):
@@ -325,7 +328,7 @@ with map_container:
     if sd.m_mode == "신규 등록" and sd.in_t_la is not None:
         folium.Marker([sd.in_t_la, sd.in_t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v390_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v395_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
