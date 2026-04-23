@@ -69,7 +69,6 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
-    # [버그 수정] 지역 필터가 새로고침 시 초기화되지 않도록 현재 선택된 index를 계산하여 주입
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     filter_idx = existing_regs.index(sd.sel_reg) + 1 if sd.sel_reg in existing_regs else 0
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
@@ -77,7 +76,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v330")
+    geolocator = Nominatim(user_agent="broadcasting_v335")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -127,7 +126,6 @@ with st.sidebar:
 
     st.divider()
     
-    # [버그 수정] 작업 모드 라디오 버튼도 새로고침 시 이전 상태 유지
     prev_mode = sd.m_mode
     mode_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     m_idx = mode_opts.index(sd.m_mode) if sd.m_mode in mode_opts else 0
@@ -170,7 +168,6 @@ with st.sidebar:
         st.subheader("⚙️ 시설 정보 수정")
         names = sd.df[sd.df['지역'] == sd.sel_reg]['이름'].tolist() if sd.sel_reg != "전체" else sd.df['이름'].tolist()
         if names:
-            # [버그 수정] 수정 대상 선택 시에도 이전 상태 인덱스 유지
             tgt_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
             sd.target_nm = st.selectbox("대상 선택", names, index=tgt_idx)
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
@@ -184,8 +181,12 @@ with st.sidebar:
                 sd.last_loaded_nm = sd.target_nm
                 
             c_la, c_lo = st.columns(2)
-            sd.t_la = c_la.number_input("위도(Dec)", value=float(sd.t_la), format="%.6f")
-            sd.t_lo = c_lo.number_input("경도(Dec)", value=float(sd.t_lo), format="%.6f")
+            # [버그 수정] 저장 직후 sd.t_la가 None이 되더라도 안전하게 DB 값으로 대체(안전망 추가)
+            safe_la = float(sd.t_la) if sd.t_la is not None else float(row['위도'])
+            safe_lo = float(sd.t_lo) if sd.t_lo is not None else float(row['경도'])
+            
+            sd.t_la = c_la.number_input("위도(Dec)", value=safe_la, format="%.6f")
+            sd.t_lo = c_lo.number_input("경도(Dec)", value=safe_lo, format="%.6f")
         else: st.warning("데이터 없음"); final_reg, v_cat, v_nm = "", "중계소", ""
         
     elif sd.m_mode == "데이터 삭제":
@@ -197,7 +198,6 @@ with st.sidebar:
                 sd.history.append(sd.df.copy())
                 sd.df = sd.df[sd.df['이름'] != del_target]
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                # 삭제가 끝나면 화면이 새로고침되면서 필터가 그대로 유지됩니다.
                 st.success(f"[{del_target}] 시설이 삭제되었습니다.")
                 st.rerun()
 
@@ -216,7 +216,12 @@ with st.sidebar:
                 if sd.m_mode == "정보 수정": sd.df.loc[sd.df['이름'] == sd.target_nm] = v
                 else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                sd.t_la, sd.t_lo, sd.v_addr = None, None, ""; st.success("저장 완료!"); st.rerun()
+                sd.t_la, sd.t_lo, sd.v_addr = None, None, ""
+                
+                # [버그 수정 핵심] 저장 후 정보를 다시 정상적으로 불러오도록 타겟 명칭 초기화
+                sd.last_loaded_nm = None 
+                
+                st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
 # 본문: 지도
@@ -271,7 +276,7 @@ with map_container:
         m, 
         use_container_width=True, 
         height=900, 
-        key=f"map_v330_{sd.map_key}",
+        key=f"map_v335_{sd.map_key}",
         returned_objects=["center"] 
     )
 
