@@ -78,7 +78,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v290")
+    geolocator = Nominatim(user_agent="broadcasting_v295")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -143,7 +143,6 @@ with st.sidebar:
         
         sd.v_addr = st.text_area("5. 주소 확인/수정", value=sd.v_addr)
         
-        # [복구] 수동 좌표 입력을 위한 칸
         c_la, c_lo = st.columns(2)
         sd.t_la = c_la.number_input("6. 위도(Dec)", value=float(sd.t_la if sd.t_la is not None else sd.center[0]), format="%.6f")
         sd.t_lo = c_lo.number_input("7. 경도(Dec)", value=float(sd.t_lo if sd.t_lo is not None else sd.center[1]), format="%.6f")
@@ -178,7 +177,6 @@ with st.sidebar:
         if st.button("✅ 데이터 저장"):
             if v_nm and final_reg:
                 sd.history.append(sd.df.copy())
-                # 수동 수정된 값 또는 현재 지정된 좌표를 저장
                 save_la = str(sd.t_la if sd.t_la is not None else sd.center[0])
                 save_lo = str(sd.t_lo if sd.t_lo is not None else sd.center[1])
                 v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [save_la, save_lo, sd.v_addr]
@@ -196,7 +194,6 @@ disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_r
 
 map_container = st.container()
 with map_container:
-    # 지도 내부 조준경 유지
     crosshair_html = """
     <style>
     .map-crosshair {
@@ -224,14 +221,19 @@ with map_container:
     if sd.m_mode == "신규 등록" and sd.t_la:
         folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-    map_data = st_folium(m, use_container_width=True, height=700, key=f"map_v290_{sd.map_key}")
+    # [핵심] returned_objects를 제한하여 클릭 이벤트를 원천 차단
+    map_data = st_folium(
+        m, 
+        use_container_width=True, 
+        height=700, 
+        key=f"map_v295_{sd.map_key}",
+        returned_objects=["center", "zoom"]
+    )
 
-# 지도 중심 이동 및 확대 배율 저장
+# 지도 중심 이동 및 확대 배율 저장 (클릭 이벤트는 이제 무시됨)
 if map_data:
     if map_data.get("center"): sd.center = [map_data["center"]["lat"], map_data["center"]["lng"]]
     if map_data.get("zoom"): sd.zoom = map_data["zoom"]
-
-# [수정 사항] 지도 마커 클릭 이벤트를 통한 좌표 획득 로직을 완전히 제거했습니다.
 
 st.divider()
 st.subheader("📊 데이터 현황")
