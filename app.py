@@ -88,13 +88,13 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     
-    # [수정] 검색, 위치, 복구 버튼 간격 및 크기 동일화 (1:1:1)
+    # [버튼 균등 배치] 1:1:1 비율
     c_loc = st.columns([1, 1, 1], gap="small")
     with c_loc[0]:
         if st.button("📍검색"):
             if search_addr:
                 try:
-                    geolocator = Nominatim(user_agent="broadcasting_v225")
+                    geolocator = Nominatim(user_agent="broadcasting_v235")
                     loc = geolocator.geocode(search_addr)
                     if loc:
                         sd.center, sd.t_la, sd.t_lo = [loc.latitude, loc.longitude], loc.latitude, loc.longitude
@@ -115,39 +115,42 @@ with st.sidebar:
                 sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
-    sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
+    sd.m_mode = st.radio("🛠️ 작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
     
     f_df_sb = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
     names = f_df_sb['이름'].tolist()
 
-    # --- [수정] 신규 등록 입력 순서 조정 ---
+    # --- [섹션 1: 신규 등록] ---
     if sd.m_mode == "신규 등록":
         st.subheader("🆕 신규 시설 등록")
         reg_opts = ["+ 직접 입력(신규 등록)"] + existing_regs
         sel_reg_name = st.selectbox("1. 지역 선택", reg_opts, index=reg_opts.index(sd.sel_reg) if sd.sel_reg in existing_regs else 0)
-        
-        if sel_reg_name == "+ 직접 입력(신규 등록)":
-            final_reg = st.text_input("📝 새 지역 명칭 입력", "")
-        else:
-            final_reg = sel_reg_name
-            
+        final_reg = st.text_input("📝 새 지역 명칭 입력", "") if sel_reg_name == "+ 직접 입력(신규 등록)" else sel_reg_name
         v_nm = st.text_input("2. 시설 이름", value="")
         v_cat = st.radio("3. 시설 구분", ["송신소", "중계소"], horizontal=True)
+        sd.v_addr = st.text_area("4. 주소 등록", value=sd.v_addr)
         
+    # --- [섹션 2: 정보 수정] ---
     elif sd.m_mode == "정보 수정":
         st.subheader("⚙️ 시설 정보 수정")
         if names:
             sd.target_nm = st.selectbox("수정 대상 선택", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
+            
             v_nm = st.text_input("시설 이름", value=row['이름'])
             final_reg = st.text_input("지역 명칭", value=row['지역'])
             v_cat = st.radio("시설 구분", ["송신소", "중계소"], index=0 if row['구분']=="송신소" else 1, horizontal=True)
+            # [수정] 주소 수정 기능 명시적 추가
+            sd.v_addr = st.text_area("시설 주소 수정", value=str(row['주소']))
+            
             if sd.last_loaded_nm != sd.target_nm:
-                sd.t_la, sd.t_lo, sd.v_addr = float(row['위도']), float(row['경도']), str(row['주소'])
+                sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
                 for s in SL: sd[f"ch_{s}"] = str(row[s])
                 sd.last_loaded_nm = sd.target_nm
-        else: st.warning("데이터 없음"); final_reg, v_cat, v_nm = "", "중계소", ""
+        else:
+            st.warning("데이터 없음"); final_reg, v_cat, v_nm = "", "중계소", ""
 
+    # --- [섹션 3: 데이터 삭제] ---
     elif sd.m_mode == "데이터 삭제":
         st.subheader("🗑️ 데이터 삭제")
         if names:
@@ -155,8 +158,9 @@ with st.sidebar:
             if st.button("🚨 삭제 실행", type="primary"):
                 sd.history.append(sd.df.copy()); sd.df = sd.df[sd.df['이름'] != del_target]; sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
-    # --- [공통 입력] 좌표, 채널, 그리고 마지막 주소 ---
+    # --- [공통: 좌표 및 채널 기술 정보] ---
     if sd.m_mode in ["신규 등록", "정보 수정"]:
+        st.divider()
         st.subheader("📋 정보 원클릭 복사")
         cur_lat = sd.t_la if sd.t_la is not None else sd.center[0]
         cur_lon = sd.t_lo if sd.t_lo is not None else sd.center[1]
@@ -168,7 +172,9 @@ with st.sidebar:
         st.code(sd.v_addr if sd.v_addr else "주소를 입력하세요", language=None)
         
         st.divider()
+        st.subheader("📍 좌표 수정 (직접 입력 가능)")
         c_la, c_lo = st.columns(2)
+        # [수정] 정보 수정 시에도 이 입력창을 통해 좌표 수정 가능
         sd.t_la = c_la.number_input("위도(Dec)", value=float(cur_lat), format="%.6f")
         sd.t_lo = c_lo.number_input("경도(Dec)", value=float(cur_lon), format="%.6f")
 
@@ -180,17 +186,15 @@ with st.sidebar:
         u_cols = st.columns(3)
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
-        # [수정] 주소 입력란을 가장 마지막 칸으로 이동
-        st.divider()
-        sd.v_addr = st.text_area("📡 시설 주소 입력 (마지막 단계)", value=sd.v_addr)
-
         if st.button("✅ 데이터 저장"):
             if v_nm and final_reg:
                 sd.history.append(sd.df.copy())
+                # 현재 입력창(sd.t_la, sd.t_lo, sd.v_addr)의 값을 그대로 저장
                 v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(sd.t_la), str(sd.t_lo), sd.v_addr]
                 if sd.m_mode == "정보 수정" and sd.target_nm:
                     idx = sd.df[sd.df['이름'] == sd.target_nm].index[0]; sd.df.loc[idx] = v
-                else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+                else:
+                    sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
                 sd.t_la, sd.t_lo, sd.target_nm, sd.last_loaded_nm, sd.v_addr = None, None, None, None, ""
                 st.success("저장 완료!"); st.rerun()
@@ -214,7 +218,7 @@ for _, r in disp_df.iterrows():
 
 if sd.t_la is not None: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v225_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v235_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
