@@ -17,6 +17,19 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 sd = st.session_state
 
+def get_google_format(lat, lon):
+    def to_dms(deg, is_lat):
+        try:
+            if not deg or str(deg).strip() == "": return ""
+            deg = float(deg)
+            d = int(abs(deg))
+            m = int((abs(deg) - d) * 60)
+            s = round((abs(deg) - d - m/60) * 3600, 2)
+            suffix = (("N" if deg >= 0 else "S") if is_lat else ("E" if deg >= 0 else "W"))
+            return f"{d}°{m}'{s}\"{suffix}"
+        except: return ""
+    return f"{to_dms(lat, True)} {to_dms(lon, False)}"
+
 def clean_kr_address(addr_str):
     if not addr_str: return ""
     parts = [p.strip() for p in addr_str.split(',')]
@@ -50,54 +63,50 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 전문가님의 사진(우측)을 기반으로 한 픽셀 단위 튜닝
+# [CSS] v420의 검증된 디자인으로 롤백 + 좌표 버튼 최적화
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
+    .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     
-    /* 🔥 [핵심 1] 사이드바 배경을 극한으로 어둡게 */
+    /* ⏪ [복구] 사이드바 배경색 (v420 스타일) */
     [data-testid="stSidebar"] {
-        background-color: #4a5568 !important; /* 딥 그레이 */
+        background-color: #ced4da !important;
     }
-    [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
-        color: white !important;
-    }
-
-    /* 🔥 [핵심 2] 위치 제어 3버튼 - 전문가님이 원하는 "블루 바" 스타일 */
+    
+    /* ⏪ [복구] 위치 제어 3버튼 디자인 (아이콘 + 그림자 블록) */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type {
-        gap: 2px !important; /* 버튼 사이 틈새를 거의 없앰 */
+        gap: 5px !important;
     }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button {
-        background-color: #5592d2 !important; /* 사진 속 그 파란색 */
-        color: white !important;
-        border: 1px solid #3d7ab8 !important;
-        border-radius: 4px !important;
-        padding: 12px 0 !important;
-        font-weight: bold !important;
-        font-size: 17px !important;
-        box-shadow: none !important;
+        width: 100% !important;
+        padding: 15px 0 !important;
+        font-size: 16px !important;
+        background-color: #f8f9fa !important;
+        border: 2px solid #adb5bd !important;
+        border-radius: 10px !important;
+        color: #212529 !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        transition: all 0.2s ease-in-out !important;
     }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button:hover {
-        background-color: #447eb9 !important;
+        background-color: #e2e6ea !important;
+        transform: translateY(-2px) !important;
     }
 
-    /* 🔥 [핵심 3] 위도/경도 입력창의 +,- 버튼 대폭 벌크업 */
+    /* ➕ [유지] 위도/경도 조절 버튼 대형화 */
     div[data-testid="stNumberInput"] button {
-        min-width: 50px !important; /* 버튼 너비 확장 */
-        height: 50px !important;    /* 버튼 높이 확장 */
-        background-color: #f1f3f5 !important;
-    }
-    div[data-testid="stNumberInput"] button:hover {
-        background-color: #e9ecef !important;
+        min-width: 50px !important; 
+        height: 50px !important;    
     }
     div[data-testid="stNumberInput"] input {
-        height: 50px !important; /* 입력창 높이도 버튼에 맞춰 통일 */
+        height: 50px !important;
         font-size: 20px !important;
         font-weight: bold !important;
     }
 
-    /* 하단 3색 액션 버튼 (전용 스타일 유지) */
+    /* 3색 액션 버튼 스타일 유지 */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
@@ -115,14 +124,13 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
 
     st.subheader("🔍 위치 제어")
-    search_addr = st.text_input("주소/건물명 검색", key="search_query")
+    search_addr = st.text_input("주소/건물명 검색")
     
-    # [디자인 변경] 아이콘 없이 텍스트만 들어간 블루 바 버튼 3총사
     c_loc = st.columns([1, 1, 1]) 
-    geolocator = Nominatim(user_agent="broadcasting_v430")
+    geolocator = Nominatim(user_agent="broadcasting_v435")
 
     with c_loc[0]:
-        if st.button("검색"):
+        if st.button("🔍 검색"):
             if search_addr:
                 try:
                     loc = geolocator.geocode(search_addr)
@@ -132,7 +140,7 @@ with st.sidebar:
                         sd.map_key += 1; st.rerun()
                 except: st.error("오류")
     with c_loc[1]:
-        if st.button("내위치"):
+        if st.button("🧭 내위치"):
             gps = get_geolocation()
             if gps and 'coords' in gps:
                 p = [gps['coords']['latitude'], gps['coords']['longitude']]
@@ -143,13 +151,12 @@ with st.sidebar:
                 except: pass
                 sd.map_key += 1; st.rerun()
     with c_loc[2]:
-        if st.button("복구"):
+        if st.button("↩️ 복구"):
             if sd.history: 
                 sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
     
-    # 3색 핵심 컨트롤
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 지도 중앙을 신규 위치로 지정"):
         sd.m_mode = "신규 등록"; sd.target_nm, sd.last_loaded_nm = None, None
@@ -189,7 +196,6 @@ with st.sidebar:
 
     st.divider()
     
-    # 하단 폼 입력
     mode_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     selected_mode = st.radio("🛠️ 현재 작업 모드 상태", mode_opts, index=mode_opts.index(sd.m_mode), horizontal=True)
     if selected_mode != sd.m_mode:
@@ -198,17 +204,18 @@ with st.sidebar:
         st.rerun()
 
     if sd.m_mode == "신규 등록":
+        st.subheader("🆕 신규 시설 등록")
         st.selectbox("1. 지역 선택", ["+ 직접 입력"] + existing_regs, key="in_reg_box")
         if sd.in_reg_box == "+ 직접 입력": st.text_input("📝 새 지역 명칭", key="in_reg_direct")
         st.text_input("2. 시설 이름", key="in_v_nm")
         st.radio("3. 시설 구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
         st.text_area("5. 주소 확인/수정", key="in_v_addr")
-        # [변경] 플러스 마이너스 버튼이 거대해진 좌표 입력창
         c_la, c_lo = st.columns(2)
         c_la.number_input("6. 위도(Dec)", format="%.6f", key="in_t_la", step=0.0001)
         c_lo.number_input("7. 경도(Dec)", format="%.6f", key="in_t_lo", step=0.0001)
 
     elif sd.m_mode == "정보 수정":
+        st.subheader("⚙️ 시설 정보 수정")
         names = sd.df[sd.df['지역'] == sd.sel_reg]['이름'].tolist() if sd.sel_reg != "전체" else sd.df['이름'].tolist()
         if names:
             sd.target_nm = st.selectbox("대상 선택", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
@@ -227,9 +234,11 @@ with st.sidebar:
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider(); st.info("📺 물리 채널 설정")
-        d_cols = st.columns(3); st.markdown("**📡 DTV 채널**")
+        st.markdown("**📡 DTV 채널**")
+        d_cols = st.columns(3)
         for i, s in enumerate(SL_DTV): d_cols[i%3].text_input(s, key=f"ch_{s}")
-        u_cols = st.columns(3); st.markdown("**✨ UHD 채널**")
+        st.markdown("**✨ UHD 채널**")
+        u_cols = st.columns(3)
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
 # ---------------------------------------------------------
@@ -250,10 +259,13 @@ with map_container:
         p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div></div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v430_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v435_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
-st.dataframe(disp_df, use_container_width=True, hide_index=True)
+st.subheader("📊 데이터 현황")
+view_df = disp_df.copy()
+view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
+st.dataframe(view_df[['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']], use_container_width=True, hide_index=True)
 st.download_button("📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
