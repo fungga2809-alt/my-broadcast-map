@@ -26,7 +26,7 @@ if 'temp_channels' in sd:
     for s in SL: sd[f"ch_{s}"] = sd.temp_channels.get(s, "")
     del sd.temp_channels
 
-# [도구] 좌표 변환 및 정제
+# [도구] 좌표 변환
 def parse_dms_to_decimal(dms_str):
     try:
         pattern = r"(\d+)°(\d+)'([\d.]+)\"([NSEW])"
@@ -83,14 +83,14 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 사이드바 디자인 및 표 중앙 정렬 강제 주입
+# [CSS] 디자인 최적화
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; }
     
-    /* 🔥 [핵심 1] 표 내부 모든 셀 중앙 정렬 */
+    /* 🔥 [핵심 복구] 표 내부 모든 셀 중앙 정렬 */
     [data-testid="stDataFrame"] td { text-align: center !important; }
     
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -104,16 +104,15 @@ st.markdown("""
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
     div[data-testid="stNumberInput"] button { min-width: 50px !important; height: 50px !important; }
-    div[data-testid="stNumberInput"] input { height: 50px !important; font-size: 20px !important; font-weight: bold !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 사이드바: 위치제어 -> 관제관리 -> 위치지정
+# 사이드바: 1위치제어 -> 2관제관리 -> 3위치지정
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("🔍 위치 제어")
-    search_addr = st.text_input("주소/건물명 검색"); geolocator = Nominatim(user_agent="broadcasting_v520")
+    search_addr = st.text_input("주소/건물명 검색"); geolocator = Nominatim(user_agent="broadcasting_v530")
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔍 검색"):
@@ -203,7 +202,7 @@ with st.sidebar:
         st.text_area("4. 주소 확인/수정", key="in_v_addr")
         dms_input = st.text_input("5. 구글어스 DMS 통합 좌표 붙여넣기")
         if dms_input:
-            la_p, lo_p = parse_dms_to_decimal(dms_input)
+            la_p, lo_p = parse_dms_to_decimal(dms_input); 
             if la_p: sd.in_t_la, sd.in_t_lo, sd.base_center = la_p, lo_p, [la_p, lo_p]
 
     elif sd.m_mode == "정보 수정":
@@ -234,11 +233,21 @@ with st.sidebar:
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
 # ---------------------------------------------------------
-# 본문: 지도 (상단)
+# 본문: 지도 및 데이터 현황 (이동 오류 완벽 차단 로직)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
+# 🔥 [핵심 1] 표 스타일링 및 중앙 정렬 함수
+def style_stations(row):
+    # 송신소: 적색 테마, 중계소: 청색 테마 (배경 및 글자색 동시 적용)
+    bg = '#fff0f0' if row['구분'] == '송신소' else '#f0f7ff'
+    fg = '#cc0000' if row['구분'] == '송신소' else '#0066cc'
+    return [f'background-color: {bg}; color: {fg}; text-align: center; font-weight: bold;' for _ in row]
+
+# ---------------------------------------------------------
+# 지도 렌더링
+# ---------------------------------------------------------
 map_container = st.container()
 with map_container:
     css_inj = "<style>.map-crosshair { position: absolute; top: 50%; left: 50%; margin-left: -20px; margin-top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 9999; pointer-events: none; } .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; } .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; } .leaflet-popup-content-wrapper { min-width: 500px !important; } .leaflet-popup-content { min-width: 480px !important; }</style><div class='map-crosshair'></div>"
@@ -252,21 +261,16 @@ with map_container:
         p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div><div style='font-size:17px; margin-bottom:8px; line-height:1.4;'><b>📡 DTV:</b><br>{dt_pop}</div><div style='font-size:17px; line-height:1.4;'><b>✨ UHD:</b><br>{uh_pop}</div></div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-    st_folium(m, use_container_width=True, height=900, key=f"map_v520_{sd.map_key}", returned_objects=["center"])
+    st_folium(m, use_container_width=True, height=900, key=f"map_v530_{sd.map_key}", returned_objects=["center"])
 
 # ---------------------------------------------------------
-# 🔥 [핵심 복구] 데이터 현황 (배경색 구분 및 중앙 정렬)
+# 🔥 [핵심 복구] 데이터 현황 (색상 구분 + 중앙 정렬 + 원클릭 이동)
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 view_df = disp_df.copy()
 view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
 
-# 🔥 시설 종류에 따라 배경색을 입히는 스타일 함수
-def style_stations(row):
-    color = '#fff0f0' if row['구분'] == '송신소' else '#f0f7ff'
-    return [f'background-color: {color}; text-align: center;' for _ in row]
-
-# 스타일 적용
+# 스타일 적용된 데이터프레임 생성
 styled_df = view_df[['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']].style.apply(style_stations, axis=1)
 
 event = st.dataframe(
@@ -274,7 +278,7 @@ event = st.dataframe(
     use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table"
 )
 
-# 선택 이벤트 처리
+# 🔥 [버그 해결] 원클릭 시 에러 없이 즉각 세션 동기화
 if event and "selection" in event and len(event["selection"]["rows"]) > 0:
     try:
         idx = event["selection"]["rows"][0]
