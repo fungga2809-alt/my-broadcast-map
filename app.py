@@ -40,25 +40,19 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] v122 UI 최적화 및 버튼 간격 밀착
+# [CSS] v122 디자인 유지 및 버튼 간격 밀착
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
-    
     .stButton > button { 
         width: 100%; border-radius: 8px; font-weight: bold; 
         white-space: nowrap !important; display: flex; justify-content: center; align-items: center;
         padding: 0.5rem 0.2rem !important; min-height: 45px;
     }
-    
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] { gap: 5px !important; }
     .leaflet-popup-content { font-size: 14px !important; width: 250px !important; line-height: 1.6; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
-
-    /* 사이드바 내 버튼 간격 밀착 */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        gap: 5px !important; 
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -68,9 +62,10 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
-    # 🗺️ 1단계: 지역 필터 (전체 화면 제어)
+    # 🗺️ 1. 지역 필터 (전체 화면 제어)
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
-    sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=0 if sd.sel_reg == "전체" else (existing_regs.index(sd.sel_reg)+1 if sd.sel_reg in existing_regs else 0))
+    sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, 
+                             index=0 if sd.sel_reg == "전체" else (existing_regs.index(sd.sel_reg)+1 if sd.sel_reg in existing_regs else 0))
 
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
@@ -79,7 +74,7 @@ with st.sidebar:
         if st.button("📍검색"):
             if search_addr:
                 try:
-                    geolocator = Nominatim(user_agent="broadcasting_v155")
+                    geolocator = Nominatim(user_agent="broadcasting_v156")
                     loc = geolocator.geocode(search_addr)
                     if loc:
                         sd.center, sd.t_la, sd.t_lo = [loc.latitude, loc.longitude], loc.latitude, loc.longitude
@@ -102,87 +97,72 @@ with st.sidebar:
 
     st.divider()
 
-    # 📍 2단계: 작업 모드 선택 (등록 / 수정 / 삭제 분리)
-    sd.m_mode = st.radio("🛠️ 작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
+    # 📍 2. 작업 모드 선택
+    sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
     
-    # 필터링된 데이터
-    f_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-    names = f_df['이름'].tolist()
+    f_df_sidebar = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
+    names = f_df_sidebar['이름'].tolist()
 
-    # --- [모드 1: 신규 등록] ---
     if sd.m_mode == "신규 등록":
-        st.subheader("🆕 신규 시설 등록")
+        st.subheader("🆕 신규 등록")
         reg_opts = ["+ 직접 입력(새 지역)"] + existing_regs
         sel_reg_name = st.selectbox("지역 선택", reg_opts, index=reg_opts.index(sd.sel_reg) if sd.sel_reg in existing_regs else 0)
-        
-        if sel_reg_name == "+ 직접 입력(새 지역)":
-            final_reg = st.text_input("새 지역 명칭 입력", "")
-        else:
-            final_reg = sel_reg_name
-
+        final_reg = st.text_input("새 지역 명칭", "") if sel_reg_name == "+ 직접 입력(새 지역)" else sel_reg_name
         v_cat = st.radio("구분", ["송신소", "중계소"], horizontal=True)
         v_nm = st.text_input("시설 이름")
         
-    # --- [모드 2: 정보 수정] ---
     elif sd.m_mode == "정보 수정":
-        st.subheader("⚙️ 시설 정보 수정")
+        st.subheader("⚙️ 정보 수정")
         if names:
-            sd.target_nm = st.selectbox("수정 대상 시설", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
+            sd.target_nm = st.selectbox("수정 대상", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
-            
-            # 정보 동기화
-            final_reg = st.text_input("지역 명칭", value=row['지역'])
+            final_reg = st.text_input("지역", value=row['지역'])
             v_cat = st.radio("구분", ["송신소", "중계소"], index=0 if row['구분']=="송신소" else 1, horizontal=True)
             v_nm = st.text_input("시설 이름", value=row['이름'])
             if sd.last_loaded_nm != sd.target_nm:
                 sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
                 for s in SL: sd[f"ch_{s}"] = str(row[s])
                 sd.last_loaded_nm = sd.target_nm
-        else:
-            st.warning("선택 지역에 수정할 데이터가 없습니다.")
-            final_reg, v_cat, v_nm = "", "중계소", ""
+        else: st.warning("데이터가 없습니다."); final_reg, v_cat, v_nm = "", "중계소", ""
 
-    # --- [모드 3: 데이터 삭제] ---
     elif sd.m_mode == "데이터 삭제":
-        st.subheader("🗑️ 데이터 즉시 삭제")
+        st.subheader("🗑️ 데이터 삭제")
         if names:
-            del_target = st.selectbox("삭제할 시설 선택", names)
-            if st.button("🚨 선택 시설 삭제", type="primary"):
+            del_target = st.selectbox("삭제할 시설", names)
+            if st.button("🚨 즉시 삭제", type="primary"):
                 sd.history.append(sd.df.copy())
                 sd.df = sd.df[sd.df['이름'] != del_target]
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                st.warning(f"[{del_target}] 삭제 완료")
                 sd.target_nm, sd.last_loaded_nm = None, None
                 st.rerun()
-        else:
-            st.warning("삭제할 데이터가 없습니다.")
+        else: st.warning("삭제할 데이터가 없습니다.")
 
-    # 공통: 좌표 및 채널 입력 (등록 및 수정 시에만 노출)
+    # 공통 입력 (저장 버튼 포함)
     if sd.m_mode in ["신규 등록", "정보 수정"]:
-        la_v = st.number_input("위도", value=float(sd.t_la if sd.t_la is not None else sd.center[0]), format="%.6f")
-        lo_v = st.number_input("경도", value=float(sd.t_lo if sd.t_lo is not None else sd.center[1]), format="%.6f")
-        sd.t_la, sd.t_lo = la_v, lo_v
-
-        st.info("📺 물리 채널 설정")
+        sd.t_la = st.number_input("위도", value=float(sd.t_la if sd.t_la is not None else sd.center[0]), format="%.6f")
+        sd.t_lo = st.number_input("경도", value=float(sd.t_lo if sd.t_lo is not None else sd.center[1]), format="%.6f")
+        st.info("📺 채널 설정")
         d_cols = st.columns(3); [d_cols[i%3].text_input(s, key=f"ch_{s}") for i, s in enumerate(SL_DTV)]
         u_cols = st.columns(3); [u_cols[i%3].text_input(s, key=f"ch_{s}") for i, s in enumerate(SL_UHD)]
-
         if st.button("✅ 데이터 저장"):
             if v_nm:
                 sd.history.append(sd.df.copy())
                 v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(sd.t_la), str(sd.t_lo), ""]
                 if sd.m_mode == "정보 수정" and sd.target_nm:
                     idx = sd.df[sd.df['이름'] == sd.target_nm].index[0]; sd.df.loc[idx] = v
-                else:
-                    sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+                else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
                 sd.t_la, sd.t_lo, sd.target_nm, sd.last_loaded_nm = None, None, None, None
                 st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도 및 데이터 표 (v122 안정성 유지)
+# [3] 본문: 지도 (NameError 해결: disp_df 정의 위치 상단 고정)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
+
+# 핵심: 지도와 표에서 사용할 데이터를 여기서 한 번 더 확실하게 정의합니다.
+disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
+
 m = folium.Map(location=sd.center, zoom_start=14, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
 for _, r in disp_df.iterrows():
@@ -195,7 +175,7 @@ for _, r in disp_df.iterrows():
 
 if sd.t_la is not None: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v155_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v156_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
