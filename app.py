@@ -6,8 +6,8 @@ from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
 import re
 
-# 1. 페이지 설정 및 초기화 (AttributeError 방지를 위해 최상단 배치)
-st.set_page_config(page_title="Broadcasting Master v710", layout="wide")
+# 1. 페이지 설정 및 초기화
+st.set_page_config(page_title="Broadcasting Master v720", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -46,7 +46,7 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 # 필수 변수 안전 초기화
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 20000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 30000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'last_clicked_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "중계소"
@@ -68,8 +68,7 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
             sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
             sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
             for s in SL: sd[f"ch_{s}"] = str(sel[s])
-            sd.map_key += 1
-            st.rerun()
+            sd.map_key += 1; st.rerun()
 
 # [CSS 스타일] 대형 버튼 및 중앙 정렬
 st.markdown("""
@@ -83,7 +82,6 @@ st.markdown("""
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
     div.element-container:has(.btn-delete-final) + div.element-container button { background-color: #d32f2f !important; color: white !important; font-weight: bold !important; }
-    [data-testid="stHorizontalBlock"] { gap: 0.3rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -101,7 +99,7 @@ with st.sidebar:
                     lat, lon = map(float, s_addr.split(','))
                     sd.base_center, sd.in_t_la, sd.in_t_lo = [lat, lon], lat, lon
                 else:
-                    loc = Nominatim(user_agent="b_v710").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v720").geocode(s_addr)
                     if loc: sd.base_center, sd.in_t_la, sd.in_t_lo, sd.in_v_addr = [loc.latitude, loc.longitude], loc.latitude, loc.longitude, loc.address
                 sd.map_key += 1; st.rerun()
             except: st.error("검색 실패")
@@ -172,15 +170,30 @@ with st.sidebar:
             if st.button("🚨 시설 삭제 실행"):
                 sd.history.append(sd.df.copy()); sd.df = sd.df[sd.df['이름'] != del_target]; sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); sd.target_nm = None; st.success("삭제 완료!"); st.rerun()
 
-    # 🔥 [복구] 물리 채널 입력창 배치 (image_0b86dc.png 스타일)
+    # 🔥 [수정] 코드 뭉치 에러 제거 및 전문가용 배치 복구 (image_0b86dc.png)
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider()
         st.markdown("### 📺 물리 채널 설정")
-        d_cols = st.columns(3); [d_cols[i].text_input(s, key=f"ch_{s}") for i, s in enumerate(SL_DTV[:3])]
-        d_cols2 = st.columns(2); [d_cols2[i].text_input(s, key=f"ch_{s}") for i, s in enumerate(SL_DTV[3:])]
+        # 1줄: SBS, KBS2, KBS1
+        d_cols = st.columns(3)
+        with d_cols[0]: st.text_input(SL_DTV[0], key=f"ch_{SL_DTV[0]}")
+        with d_cols[1]: st.text_input(SL_DTV[1], key=f"ch_{SL_DTV[1]}")
+        with d_cols[2]: st.text_input(SL_DTV[2], key=f"ch_{SL_DTV[2]}")
+        # 2줄: EBS, MBC
+        d_cols2 = st.columns(2)
+        with d_cols2[0]: st.text_input(SL_DTV[3], key=f"ch_{SL_DTV[3]}")
+        with d_cols2[1]: st.text_input(SL_DTV[4], key=f"ch_{SL_DTV[4]}")
         st.markdown("📡 **DTV**")
-        u_cols = st.columns(3); [u_cols[i].text_input(s, key=f"ch_{s}") for i, s in enumerate(SL_UHD[:3])]
-        u_cols2 = st.columns(2); [u_cols2[i].text_input(s, key=f"ch_{s}") for i, s in enumerate(SL_UHD[3:])]
+        
+        # 3줄: SBS(U), KBS2(U), KBS1(U)
+        u_cols = st.columns(3)
+        with u_cols[0]: st.text_input(SL_UHD[0], key=f"ch_{SL_UHD[0]}")
+        with u_cols[1]: st.text_input(SL_UHD[1], key=f"ch_{SL_UHD[1]}")
+        with u_cols[2]: st.text_input(SL_UHD[2], key=f"ch_{SL_UHD[2]}")
+        # 4줄: EBS(U), MBC(U)
+        u_cols2 = st.columns(2)
+        with u_cols2[0]: st.text_input(SL_UHD[3], key=f"ch_{SL_UHD[3]}")
+        with u_cols2[1]: st.text_input(SL_UHD[4], key=f"ch_{SL_UHD[4]}")
         st.markdown("✨ **UHD**")
 
 # ---------------------------------------------------------
@@ -193,15 +206,17 @@ with st.container():
     css_inj = "<style>.map-crosshair { position: absolute; top: 50%; left: 50%; margin-left: -20px; margin-top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 9999; pointer-events: none; } .map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; } .map-crosshair::before { top: 18px; left: -10px; width: 56px; height: 2px; } .map-crosshair::after { left: 18px; top: -10px; height: 56px; width: 2px; } .leaflet-popup-content-wrapper { min-width: 380px !important; }</style><div class='map-crosshair'></div>"
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
     m.get_root().html.add_child(folium.Element(css_inj))
+    
     for _, r in disp_df.iterrows():
         is_edit = (sd.m_mode in ["정보 수정", "데이터 삭제"] and sd.target_nm == r['이름'])
         lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_edit else (safe_float(r['위도']), safe_float(r['경도']))
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
         
-        # 2단 팝업 (image_0b2222.png 재현)
-        dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV if r[s]])
-        uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD if r[s]])
+        # 🔥 [복구] EBS(U) 포함 2단 팝업 (image_0b2222.png)
+        dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
+        uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
+        
         p_html = f"""
         <div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'>
             <div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>
@@ -216,6 +231,7 @@ with st.container():
         """
         folium.Marker([lat, lon], icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:3px 8px;background:white;border:2px solid {color};border-radius:5px;color:{color};font-weight:bold;white-space:nowrap;transform:translate(15px,-30px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
+    
     map_data = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center"])
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
