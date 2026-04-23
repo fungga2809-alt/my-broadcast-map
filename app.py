@@ -9,7 +9,7 @@ from geopy.geocoders import Nominatim
 st.set_page_config(page_title="Broadcasting Infrastructure Master", layout="wide")
 DB = 'stations.csv'
 
-# [정의] 채널 및 컬럼
+# [정의] 채널 및 컬럼 (메모 -> 주소 변경)
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
@@ -72,6 +72,7 @@ st.markdown("""
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] { gap: 5px !important; }
     .leaflet-popup-content { font-size: 14px !important; width: 280px !important; line-height: 1.6; }
+    [data-testid="stDataFrame"] td { text-align: center !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -81,6 +82,7 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
+    # 🗺️ 지역 필터
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, 
                              index=0 if sd.sel_reg == "전체" else (existing_regs.index(sd.sel_reg)+1 if sd.sel_reg in existing_regs else 0))
@@ -92,7 +94,7 @@ with st.sidebar:
         if st.button("📍검색"):
             if search_addr:
                 try:
-                    geolocator = Nominatim(user_agent="broadcasting_v190")
+                    geolocator = Nominatim(user_agent="broadcasting_v195")
                     loc = geolocator.geocode(search_addr)
                     if loc:
                         sd.center, sd.t_la, sd.t_lo = [loc.latitude, loc.longitude], loc.latitude, loc.longitude
@@ -151,12 +153,13 @@ with st.sidebar:
         cur_lat = sd.t_la if sd.t_la is not None else sd.center[0]
         cur_lon = sd.t_lo if sd.t_lo is not None else sd.center[1]
         
+        # [수정] 좌표 복사 칸
         st.caption("📍 구글 지도용 좌표 (DMS)")
         st.code(get_google_format(cur_lat, cur_lon), language=None)
         
-        if sd.v_addr:
-            st.caption("📝 시설 주소 복사")
-            st.code(sd.v_addr, language=None)
+        # [수정] 주소 복사 칸 (항상 보이게 하여 가시성 확보)
+        st.caption("📝 시설 주소 복사")
+        st.code(sd.v_addr if sd.v_addr else "주소를 입력하세요", language=None)
         
         st.divider()
         c_la, c_lo = st.columns(2)
@@ -164,6 +167,7 @@ with st.sidebar:
         sd.t_lo = c_lo.number_input("경도(Dec)", value=float(cur_lon), format="%.6f")
         sd.v_addr = st.text_area("상세 주소 입력", value=sd.v_addr)
 
+        # [수정] 채널 설정 디자인 복구 (for 루프 사용하여 지저분한 리스트 출력 제거)
         st.info("📺 물리 채널 설정")
         st.markdown("**📡 DTV 채널**")
         d_cols = st.columns(3)
@@ -201,13 +205,11 @@ for _, r in disp_df.iterrows():
         p_html = f"<div style='width:260px;'><b>[{r['구분']}] {r['이름']}</b><br><span style='color:gray; font-size:12px;'>{r['주소']}</span><hr><b>통합 좌표:</b><br>{google_fmt}<br><b>DTV:</b> {'|'.join([f'{s}:{r[s]}' for s in SL_DTV])}</div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);pointer-events:none;">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=300)).add_to(m)
-    except:
-        pass
+    except: pass
 
-if sd.t_la is not None:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
+if sd.t_la is not None: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v190_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v195_{sd.map_key}")
 
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
@@ -217,7 +219,7 @@ if map_data.get("last_clicked"):
         sd.map_key += 1; st.rerun()
 
 st.divider()
-st.subheader("📊 데이터 현황")
+st.subheader("📊 데이터 현황") # [수정] 제목 복구
 
 view_df = disp_df.copy()
 view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
@@ -226,6 +228,7 @@ V_CL = ['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']
 styled_df = view_df[V_CL].style.apply(lambda r: ['background-color:#ffebee;color:#d32f2f;font-weight:bold;text-align:center;']*len(r) if r['구분']=='송신소' else ['background-color:#e3f2fd;color:#1976d2;text-align:center;']*len(r), axis=1)
 event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
 
+# 무한 리부팅 방지
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
