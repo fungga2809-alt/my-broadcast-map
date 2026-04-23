@@ -40,11 +40,10 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# [핵심 수정] 지도를 생성하는 base와 화면을 움직이는 crosshair 분리
 defaults = {
-    'base_center': [35.1796, 129.0756], # 지도 렌더링 기준점 (검색/표 클릭 시에만 변경)
-    'base_zoom': 14,                    # 지도 렌더링 줌 (검색/표 클릭 시에만 변경)
-    'crosshair_center': None,           # 사용자가 화면을 드래그해서 맞춘 조준경 좌표
+    'base_center': [35.1796, 129.0756], 
+    'base_zoom': 14,                    
+    'crosshair_center': None,           
     't_la': None, 't_lo': None, 
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
     'm_mode': "신규 등록", 'target_nm': None, 'last_loaded_nm': None, 'v_addr': ""
@@ -70,13 +69,15 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
+    # [버그 수정] 지역 필터가 새로고침 시 초기화되지 않도록 현재 선택된 index를 계산하여 주입
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
-    sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs)
+    filter_idx = existing_regs.index(sd.sel_reg) + 1 if sd.sel_reg in existing_regs else 0
+    sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
 
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v315")
+    geolocator = Nominatim(user_agent="broadcasting_v330")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -84,7 +85,6 @@ with st.sidebar:
                 try:
                     loc = geolocator.geocode(search_addr)
                     if loc:
-                        # 명시적 점프 시에만 base 업데이트
                         sd.base_center = [loc.latitude, loc.longitude]
                         sd.base_zoom = 16
                         sd.t_la, sd.t_lo, sd.v_addr = loc.latitude, loc.longitude, loc.address
@@ -109,7 +109,6 @@ with st.sidebar:
 
     st.divider()
     
-    # 🎯 조준경 위치 획득
     if st.button("🎯 지도 중앙을 등록 위치로 지정", type="primary"):
         target_loc = sd.crosshair_center if sd.crosshair_center else sd.base_center
         sd.t_la, sd.t_lo = target_loc[0], target_loc[1]
@@ -128,10 +127,19 @@ with st.sidebar:
 
     st.divider()
     
+    # [버그 수정] 작업 모드 라디오 버튼도 새로고침 시 이전 상태 유지
     prev_mode = sd.m_mode
-    sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
-    if prev_mode != sd.m_mode and sd.m_mode != "신규 등록":
-        sd.t_la, sd.t_lo = None, None  
+    mode_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
+    m_idx = mode_opts.index(sd.m_mode) if sd.m_mode in mode_opts else 0
+    sd.m_mode = st.radio("🛠️ 작업 모드", mode_opts, index=m_idx, horizontal=True)
+    
+    if prev_mode != sd.m_mode:
+        if sd.m_mode == "신규 등록":
+            sd.t_la, sd.t_lo, sd.v_addr = None, None, ""
+            sd.last_loaded_nm = None
+            for s in SL: sd[f"ch_{s}"] = ""
+        else:
+            sd.t_la, sd.t_lo = None, None
 
     if sd.m_mode == "신규 등록":
         st.subheader("🆕 신규 시설 등록")
@@ -162,7 +170,9 @@ with st.sidebar:
         st.subheader("⚙️ 시설 정보 수정")
         names = sd.df[sd.df['지역'] == sd.sel_reg]['이름'].tolist() if sd.sel_reg != "전체" else sd.df['이름'].tolist()
         if names:
-            sd.target_nm = st.selectbox("대상 선택", names)
+            # [버그 수정] 수정 대상 선택 시에도 이전 상태 인덱스 유지
+            tgt_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
+            sd.target_nm = st.selectbox("대상 선택", names, index=tgt_idx)
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
             v_nm, final_reg = st.text_input("시설 이름", value=row['이름']), st.text_input("지역 명칭", value=row['지역'])
             v_cat = st.radio("구분", ["송신소", "중계소"], index=0 if row['구분']=="송신소" else 1, horizontal=True)
@@ -170,12 +180,26 @@ with st.sidebar:
             
             if sd.last_loaded_nm != sd.target_nm:
                 sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
+                for s in SL: sd[f"ch_{s}"] = str(row[s])
                 sd.last_loaded_nm = sd.target_nm
                 
             c_la, c_lo = st.columns(2)
             sd.t_la = c_la.number_input("위도(Dec)", value=float(sd.t_la), format="%.6f")
             sd.t_lo = c_lo.number_input("경도(Dec)", value=float(sd.t_lo), format="%.6f")
         else: st.warning("데이터 없음"); final_reg, v_cat, v_nm = "", "중계소", ""
+        
+    elif sd.m_mode == "데이터 삭제":
+        st.subheader("🗑️ 데이터 삭제")
+        names = sd.df[sd.df['지역'] == sd.sel_reg]['이름'].tolist() if sd.sel_reg != "전체" else sd.df['이름'].tolist()
+        if names:
+            del_target = st.selectbox("삭제 시설 선택", names)
+            if st.button("🚨 삭제 실행", type="primary"):
+                sd.history.append(sd.df.copy())
+                sd.df = sd.df[sd.df['이름'] != del_target]
+                sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
+                # 삭제가 끝나면 화면이 새로고침되면서 필터가 그대로 유지됩니다.
+                st.success(f"[{del_target}] 시설이 삭제되었습니다.")
+                st.rerun()
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider()
@@ -203,7 +227,6 @@ disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_r
 
 map_container = st.container()
 with map_container:
-    # 팝업 너비 강제 고정 및 십자 조준경
     css_injection = """
     <style>
     .map-crosshair {
@@ -215,13 +238,12 @@ with map_container:
     }
     .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
     .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
-    .leaflet-popup-content-wrapper { min-width: 470px !important; width: 470px !important; }
-    .leaflet-popup-content { min-width: 450px !important; width: 450px !important; margin: 13px !important; }
+    .leaflet-popup-content-wrapper { min-width: 500px !important; width: 500px !important; }
+    .leaflet-popup-content { min-width: 480px !important; width: 480px !important; margin: 13px !important; }
     </style>
     <div class="map-crosshair"></div>
     """
     
-    # 지도는 base_center와 base_zoom에만 의존 (롤백 완전 차단)
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
     m.get_root().html.add_child(folium.Element(css_injection))
 
@@ -229,33 +251,30 @@ with map_container:
         p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
         dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
         
-        # [사진 완벽 구현] 가로줄 제거, 볼드체, 간격 축소
         p_html = f"""
         <div style='font-family: sans-serif; padding-top: 5px;'>
-            <div style='font-size:18px; font-weight:bold; color:#333; margin-bottom:4px;'>[{r['구분']}] {r['이름']}</div>
-            <div style='color:#666; font-size:13px; margin-bottom:12px;'>{r['주소']}</div>
-            <div style='font-size:15px; margin-bottom:6px;'>
-                <b>📡 DTV:</b> {dt_pop}
+            <div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div>
+            <div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div>
+            <div style='font-size:17px; margin-bottom:8px; line-height:1.4;'>
+                <b>📡 DTV:</b><br>{dt_pop}
             </div>
-            <div style='font-size:15px;'>
-                <b>✨ UHD:</b> {uh_pop}
+            <div style='font-size:17px; line-height:1.4;'>
+                <b>✨ UHD:</b><br>{uh_pop}
             </div>
         </div>
         """
         
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
-        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=450, max_width=450)).add_to(m)
+        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
 
-    # [핵심] zoom을 반환값에서 제외하여 휠 조작 시 흰색 깜빡임과 롤백을 물리적으로 차단
     map_data = st_folium(
         m, 
         use_container_width=True, 
         height=900, 
-        key=f"map_v315_{sd.map_key}",
+        key=f"map_v330_{sd.map_key}",
         returned_objects=["center"] 
     )
 
-# 사용자가 움직인 조준경 좌표만 살짝 업데이트 (지도 새로고침 없음)
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
