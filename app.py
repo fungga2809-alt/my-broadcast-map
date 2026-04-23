@@ -64,7 +64,7 @@ st.markdown("""
 
     /* [간격 줄이기] 사이드바 버튼 사이의 간격을 강제로 줄임 */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        gap: 5px !important; 
+        gap: 3px !important; 
     }
     </style>
     """, unsafe_allow_html=True)
