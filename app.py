@@ -17,51 +17,13 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 sd = st.session_state
 
-# [방어막 2] 표에서 클릭할 때도 기존 데이터 파괴 방지
-# [방어막 1] 새로고침 시 채널 데이터가 날아가는 것을 막는 특수 함수
-def safe_rerun():
-    # [방어막 2] 표에서 클릭할 때도 기존 데이터 파괴 방지
-    # 새로고침 직후 안전 금고에서 채널 데이터 복구
-    sd.temp_channels = {s: sd.get(f"ch_{s}", "") for s in SL}
-    # [핵심 방어막] 새로고침 시 채널 데이터가 날아가는 것을 막는 특수 함수
-    st.rerun()
-
-# 새로고침 직후 안전 금고에서 채널 데이터 복구
-# [핵심 방어막] 새로고침 시 채널 데이터가 날아가는 것을 막는 특수 함수
-if 'temp_channels' in sd:
-    # 새로고침 직후 안전 금고에서 채널 데이터 복구
-    for s in SL:
-        # 새로고침 직후 안전 금고에서 채널 데이터 복구
-        sd[f"ch_{s}"] = sd.temp_channels.get(s, "")
-    # 새로고침 직후 안전 금고에서 채널 데이터 복구
-    del sd.temp_channels
-
-def get_google_format(lat, lon):
-    def to_dms(deg, is_lat):
-        try:
-            if not deg or str(deg).strip() == "": return ""
-            deg = float(deg)
-            d = int(abs(deg))
-            m = int((abs(deg) - d) * 60)
-            s = round((abs(deg) - d - m/60) * 3600, 2)
-            suffix = (("N" if deg >= 0 else "S") if is_lat else ("E" if deg >= 0 else "W"))
-            return f"{d}°{m}'{s}\"{suffix}"
-        except: return ""
-    return f"{to_dms(lat, True)} {to_dms(lon, False)}"
-
-#
 def clean_kr_address(addr_str):
     if not addr_str: return ""
     parts = [p.strip() for p in addr_str.split(',')]
     filtered = []
     for p in parts:
-        #
-        if p == "대한민국" or re.match(r'^\d{4,5}$', p): 
-            continue
-        #
-        #
-        if re.search(r'(도|광역시|특별시|자치시|시|군|구)$', p) and len(p) <= 7:
-            continue
+        if p == "대한민국" or re.match(r'^\d{4,5}$', p): continue
+        if re.search(r'(도|광역시|특별시|자치시|시|군|구)$', p) and len(p) <= 7: continue
         filtered.append(p)
     filtered.reverse()
     return " ".join(filtered)
@@ -72,87 +34,73 @@ def load_data():
         if '메모' in df.columns: df.rename(columns={'메모': '주소'}, inplace=True)
         if '지역' not in df.columns: df.insert(0, '지역', '미지정')
         return df.reindex(columns=CL, fill_value="")
-    except:
-        return pd.DataFrame(columns=CL, dtype=str)
+    except: return pd.DataFrame(columns=CL, dtype=str)
 
 if 'df' not in sd: sd.df = load_data()
 
-#
-# [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
-# [핵심] 지도 중앙을 스크롤/타겟팅해도 튕겨 돌아가지 않게 못 박는 베이스 센터 설정
 defaults = {
-    #
-    'base_center': [35.1796, 129.0756], 
-    #
-    'base_zoom': 14,                    
-    #
-    'crosshair_center': None,           
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'crosshair_center': None,           
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
     'm_mode': "신규 등록", 'target_nm': None, 'last_loaded_nm': None,
     'in_reg_box': "+ 직접 입력", 'in_reg_direct': "", 'in_v_nm': "", 
-    'in_v_cat': "중계소", 'in_v_addr': "", 
-    # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
-    'in_t_la': 35.1796, 'in_t_lo': 129.0756
+    'in_v_cat': "중계소", 'in_v_addr': "", 'in_t_la': 35.1796, 'in_t_lo': 129.0756
 }
-# [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
-# [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 사이드바 및 버튼 디자인 전면 개편 디자인 최종 완결판
+# [CSS] 전문가님의 사진(우측)을 기반으로 한 픽셀 단위 튜닝
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
-    th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
-    .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
-    [data-testid="stDataFrame"] td { text-align: center !important; }
+    th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
     
-    /* 🔥 [핵심 1] 좌측 사이드바 배경색을 훨씬 더 어둡게 변경 */
+    /* 🔥 [핵심 1] 사이드바 배경을 극한으로 어둡게 */
     [data-testid="stSidebar"] {
-        background-color: #ced4da !important;
+        background-color: #4a5568 !important; /* 딥 그레이 */
     }
-    
-    /* 3색 액션 버튼 CSS 강제 주입 - 기존 스타일 유지 */
+    [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        color: white !important;
+    }
+
+    /* 🔥 [핵심 2] 위치 제어 3버튼 - 전문가님이 원하는 "블루 바" 스타일 */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type {
+        gap: 2px !important; /* 버튼 사이 틈새를 거의 없앰 */
+    }
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button {
+        background-color: #5592d2 !important; /* 사진 속 그 파란색 */
+        color: white !important;
+        border: 1px solid #3d7ab8 !important;
+        border-radius: 4px !important;
+        padding: 12px 0 !important;
+        font-weight: bold !important;
+        font-size: 17px !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button:hover {
+        background-color: #447eb9 !important;
+    }
+
+    /* 🔥 [핵심 3] 위도/경도 입력창의 +,- 버튼 대폭 벌크업 */
+    div[data-testid="stNumberInput"] button {
+        min-width: 50px !important; /* 버튼 너비 확장 */
+        height: 50px !important;    /* 버튼 높이 확장 */
+        background-color: #f1f3f5 !important;
+    }
+    div[data-testid="stNumberInput"] button:hover {
+        background-color: #e9ecef !important;
+    }
+    div[data-testid="stNumberInput"] input {
+        height: 50px !important; /* 입력창 높이도 버튼에 맞춰 통일 */
+        font-size: 20px !important;
+        font-weight: bold !important;
+    }
+
+    /* 하단 3색 액션 버튼 (전용 스타일 유지) */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
-    
-    /* 🔥 [핵심 2] 위치 제어 버튼 전면 재설계 - 완전히 다른 디자인 */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type {
-        gap: 4px !important; /* 초밀착 유지 */
-    }
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button {
-        width: 100% !important; /* 꽉 채움 유지 */
-        padding: 15px 0 !important; /* 큼직한 세로 두께 유지 */
-        font-size: 16px !important; /* 큰 글자 유지 */
-        background-color: #f8f9fa !important; /* 밝은 회색 배경으로 변경 (완전히 다른 느낌) */
-        border: 2px solid #adb5bd !important; /* 두껍고 짙은 테두리 (완전히 다른 느낌) */
-        border-radius: 10px !important; /* 더 둥글게 (완전히 다른 느낌) */
-        color: #212529 !important; /* 짙은 글씨색 (완전히 다른 느낌) */
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important; /* 강한 그림자 효과 (완전히 다른 느낌) */
-        transition: all 0.2s ease-in-out !important; /* 부드러운 전환 효과 추가 */
-    }
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button:hover {
-        background-color: #e2e6ea !important; /* 호버 시 더 짙은 회색 */
-        border-color: #6c757d !important; /* 호버 시 더 짙은 테두리 */
-        transform: translateY(-2px) !important; /* 호버 시 살짝 떠오르는 효과 추가 */
-    }
-    
-    /* 🔥 [핵심 3] st.number_input 컴포넌트 스타일 조정 - 위도/경도 버튼 크기 수정 */
-    /* number_input 컴포넌트 전체 폰트 크기를 키워 내부 버튼과 요소들이 비례적으로 커지게 함 */
-    div[data-testid="stNumberInput"] {
-        font-size: 20px !important;
-    }
-    /* 위도/경도 입력 필드의 +,- 버튼 영역을 강제로 키워 클릭하기 쉽게 함 */
-    div[data-testid="stNumberInput"] button {
-        padding: 8px !important; /* 버튼 영역 확대 */
-    }
-    /* +,- 기호 크기를 키워 시인성을 높임 */
-    div[data-testid="stNumberInput"] button span {
-        font-size: 20px !important; /* 기호 크기 확대 */
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -163,406 +111,149 @@ with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
-    #
     filter_idx = existing_regs.index(sd.sel_reg) + 1 if sd.sel_reg in existing_regs else 0
-    #
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
 
     st.subheader("🔍 위치 제어")
-    search_addr = st.text_input("주소/건물명 검색")
+    search_addr = st.text_input("주소/건물명 검색", key="search_query")
     
-    # 솔리드 스타일로 꽉 채워지고 대형화된 3버튼 그룹
+    # [디자인 변경] 아이콘 없이 텍스트만 들어간 블루 바 버튼 3총사
     c_loc = st.columns([1, 1, 1]) 
-    #
-    #
-    geolocator = Nominatim(user_agent="broadcasting_v420")
+    geolocator = Nominatim(user_agent="broadcasting_v430")
 
     with c_loc[0]:
-        #
-        #
-        if st.button("🔍 검색"):
+        if st.button("검색"):
             if search_addr:
                 try:
                     loc = geolocator.geocode(search_addr)
                     if loc:
-                        #
                         sd.base_center, sd.base_zoom = [loc.latitude, loc.longitude], 16
-                        # [핵심 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거]
-                        # [핵심] 지도 중앙을 스크롤/타겟팅해도 튕겨 돌아가지 않게 못 박는 베이스 센터 설정
-                        #
                         sd.in_t_la, sd.in_t_lo, sd.in_v_addr = loc.latitude, loc.longitude, clean_kr_address(loc.address)
                         sd.map_key += 1; st.rerun()
                 except: st.error("오류")
     with c_loc[1]:
-        #
-        #
-        #
-        #
-        #
-        #
-        if st.button("🧭 내 위치"):
+        if st.button("내위치"):
             gps = get_geolocation()
             if gps and 'coords' in gps:
                 p = [gps['coords']['latitude'], gps['coords']['longitude']]
-                #
-                sd.base_center, sd.base_zoom, 
-                # [핵심 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거]
-                # [핵심] 지도 중앙을 스크롤/타겟팅해도 튕겨 돌아가지 않게 못 박는 베이스 센터 설정
-                sd.in_t_la, sd.in_t_lo = [p[0], p[1]], 16, p[0], p[1]
+                sd.base_center, sd.base_zoom, sd.in_t_la, sd.in_t_lo = [p[0], p[1]], 16, p[0], p[1]
                 try:
-                    #
                     rev = geolocator.reverse(f"{p[0]}, {p[1]}")
-                    #
-                    #
                     if rev: sd.in_v_addr = clean_kr_address(rev.address)
                 except: pass
                 sd.map_key += 1; st.rerun()
     with c_loc[2]:
-        #
-        #
-        if st.button("↩️ 복구"):
+        if st.button("복구"):
             if sd.history: 
-                #
                 sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
     
-    # [v370 마스터 정제판] 녹색 버튼 이름을 "✅ 데이터 등록" 하나로 통일
-    # [ cite: green_button]
+    # 3색 핵심 컨트롤
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
-    #
     if st.button("🎯 지도 중앙을 신규 위치로 지정"):
-        #
-        # [v370 마스터 정제판] 임시 녹색 마커 완전 삭제
-        # [v370 마스터 정제판] 녹색 마커 코드 완전 삭제
-        sd.m_mode = "신규 등록"
-        sd.target_nm, sd.last_loaded_nm = None, None
+        sd.m_mode = "신규 등록"; sd.target_nm, sd.last_loaded_nm = None, None
         for s in SL: sd[f"ch_{s}"] = ""
         target_loc = sd.crosshair_center if sd.crosshair_center else sd.base_center
-        # [v370 마스터 정제판] 지도가 튕겨 돌아가는 현상 완전 차단
-        # [v370 마스터 정제판] 수정 좌표만 적용하고 채널은 보존
-        # [v370 마스터 정제판] 수정 위치로 지정
-        sd.in_t_la, sd.in_t_lo = target_loc[0], target_loc[1]
-        # [v370 마스터 정제판] 지도가 튕기지 않도록 베이스 센터를 조준경 위치로 고정
-        # [v370 마스터 정제판] 지도가 원래 자리로 튕겨 돌아가지 않도록 고정
-        sd.base_center = [target_loc[0], target_loc[1]] 
+        sd.in_t_la, sd.in_t_lo, sd.base_center = target_loc[0], target_loc[1], [target_loc[0], target_loc[1]]
         try:
-            #
             rev = geolocator.reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
-            #
-            #
             if rev: sd.in_v_addr = clean_kr_address(rev.address)
         except: pass
         st.rerun()
 
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 지도 중앙을 수정 위치로 지정"):
-        #
         sd.m_mode = "정보 수정"
         target_loc = sd.crosshair_center if sd.crosshair_center else sd.base_center
-        #
-        # [v370 마스터 정제판] 수정 위치로 지정
-        sd.in_t_la, sd.in_t_lo = target_loc[0], target_loc[1]
-        #
-        #
-        #
-        sd.base_center = [target_loc[0], target_loc[1]]
+        sd.in_t_la, sd.in_t_lo, sd.base_center = target_loc[0], target_loc[1], [target_loc[0], target_loc[1]]
         try:
-            #
-            #
-            #
-            #
-            #
             rev = geolocator.reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
-            #
             if rev: sd.in_v_addr = clean_kr_address(rev.address)
         except: pass
-        st.rerun() 
+        st.rerun()
 
-    # [수정] Placeholder 제거. 직접 렌더링으로 깜빡임 차단
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
-        # [v370 마스터 정제판] 녹색 버튼의 텍스트를 "✅ 데이터 등록"으로 통일
         if st.button("✅ 데이터 등록"):
-            # [ cite: green_button]
             final_reg = sd.in_reg_direct if (sd.m_mode == "신규 등록" and sd.in_reg_box == "+ 직접 입력") else sd.in_reg_box if sd.m_mode == "신규 등록" else sd.in_reg_direct
-            
             if sd.in_v_nm and final_reg:
-                #
                 sd.history.append(sd.df.copy())
-                # [v370 마스터 정제판] 데이터 등록 예약석
                 v = [final_reg, sd.in_v_cat, sd.in_v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
-                if sd.m_mode == "정보 수정" and sd.target_nm: 
-                    # [ cite: green_button]
-                    sd.df.loc[sd.df['이름'] == sd.target_nm] = v
-                else: 
-                    # [ cite: green_button]
-                    #
-                    sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-                # [v370 마스터 정제판] 데이터 등록 실행 및 success 메시지
+                if sd.m_mode == "정보 수정" and sd.target_nm: sd.df.loc[sd.df['이름'] == sd.target_nm] = v
+                else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                
-                # 저장 후 폼 깔끔하게 초기화
-                # [ cite: green_button]
-                #
-                #
                 sd.in_v_nm, sd.in_v_addr, sd.last_loaded_nm = "", "", None 
-                # [ cite: defaults]
-                # [ cite: safe_rerun]
                 for s in SL: sd[f"ch_{s}"] = ""
-                st.success("데이터가 안전하게 등록되었습니다!")
-            else:
-                st.warning("시설 이름과 지역 명칭을 입력해주세요.")
-
-    st.divider()
-    # =========================================================
-
-    st.subheader("📋 정보 원클릭 복사")
-    #
-    #
-    #
-    st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language=None)
-    #
-    #
-    st.code(sd.in_v_addr if sd.in_v_addr else "위치를 지정하세요", language=None)
+                st.success("데이터가 안전하게 등록되었습니다!"); st.rerun()
 
     st.divider()
     
+    # 하단 폼 입력
     mode_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
-    # [ cite: image_08e006.png]
-    m_idx = mode_opts.index(sd.m_mode) if sd.m_mode in mode_opts else 0
-    # [ cite: horizontal_radio]
-    # [ cite: v380]
-    # [v370 마스터 정제판] 현재 작업 모드 상태 라디오 버튼
-    selected_mode = st.radio("🛠️ 현재 작업 모드 상태", mode_opts, index=m_idx, horizontal=True)
-    
-    #
-    #
+    selected_mode = st.radio("🛠️ 현재 작업 모드 상태", mode_opts, index=mode_opts.index(sd.m_mode), horizontal=True)
     if selected_mode != sd.m_mode:
         sd.m_mode = selected_mode
-        if sd.m_mode == "신규 등록":
-            # [ cite: defaults]
-            # [ cite: clean_kr_address]
-            sd.in_v_nm, sd.in_v_addr, sd.last_loaded_nm = "", "", None
-            #
-            #
-            for s in SL: sd[f"ch_{s}"] = ""
+        if sd.m_mode == "신규 등록": sd.in_v_nm, sd.in_v_addr, sd.last_loaded_nm = "", "", None
+        st.rerun()
 
     if sd.m_mode == "신규 등록":
-        st.subheader("🆕 신규 시설 등록")
-        reg_opts = ["+ 직접 입력"] + existing_regs
-        #
-        # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
-        #
-        st.selectbox("1. 지역 선택", reg_opts, key="in_reg_box")
-        if sd.in_reg_box == "+ 직접 입력":
-            st.text_input("📝 새 지역 명칭", key="in_reg_direct")
-        
-        # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
+        st.selectbox("1. 지역 선택", ["+ 직접 입력"] + existing_regs, key="in_reg_box")
+        if sd.in_reg_box == "+ 직접 입력": st.text_input("📝 새 지역 명칭", key="in_reg_direct")
         st.text_input("2. 시설 이름", key="in_v_nm")
-        # [복구] 시설 구분 라디오 버튼 가로 배치(horizontal=True) 적용
         st.radio("3. 시설 구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
-        
-        addr_api_query = st.text_input("4. 주소 검색(API)")
-        #
-        #
-        if st.button("🏠 주소 자동 찾기"):
-            if addr_api_query:
-                try:
-                    #
-                    loc = geolocator.geocode(addr_api_query)
-                    if loc:
-                        # [ cite: clean_kr_address]
-                        #
-                        #
-                        # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
-                        sd.in_v_addr, sd.in_t_la, sd.in_t_lo = clean_kr_address(loc.address), loc.latitude, loc.longitude
-                        #
-                        # [핵심 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거]
-                        # [핵심] 지도 중앙을 스크롤/타겟팅해도 튕겨 돌아가지 않게 못 박는 베이스 센터 설정
-                        sd.base_center, sd.base_zoom = [loc.latitude, loc.longitude], 16
-                        #
-                        sd.map_key += 1; st.rerun()
-                except: st.error("검색 실패")
-        
-        # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
         st.text_area("5. 주소 확인/수정", key="in_v_addr")
+        # [변경] 플러스 마이너스 버튼이 거대해진 좌표 입력창
         c_la, c_lo = st.columns(2)
-        # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
-        c_la.number_input("6. 위도(Dec)", format="%.6f", key="in_t_la")
-        c_lo.number_input("7. 경도(Dec)", format="%.6f", key="in_t_lo")
+        c_la.number_input("6. 위도(Dec)", format="%.6f", key="in_t_la", step=0.0001)
+        c_lo.number_input("7. 경도(Dec)", format="%.6f", key="in_t_lo", step=0.0001)
 
     elif sd.m_mode == "정보 수정":
-        st.subheader("⚙️ 시설 정보 수정")
         names = sd.df[sd.df['지역'] == sd.sel_reg]['이름'].tolist() if sd.sel_reg != "전체" else sd.df['이름'].tolist()
         if names:
-            tgt_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
-            sd.target_nm = st.selectbox("대상 선택", names, index=tgt_idx)
-            
+            sd.target_nm = st.selectbox("대상 선택", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
             if sd.last_loaded_nm != sd.target_nm:
-                # [ cite: defaults]
                 row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
-                #
-                sd.in_v_nm = row['이름']
-                sd.in_reg_direct = row['지역']
-                sd.in_v_cat = row['구분']
-                sd.in_t_la, sd.in_t_lo = float(row['위도']), float(row['경도'])
-                sd.in_v_addr = str(row['주소'])
-                #
-                #
+                sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = row['이름'], row['지역'], row['구분']
+                sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(row['위도']), float(row['경도']), str(row['주소'])
                 for s in SL: sd[f"ch_{s}"] = str(row[s])
-                # [ cite:defaults]
                 sd.last_loaded_nm = sd.target_nm
-            
-            # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
-            st.text_input("시설 이름", key="in_v_nm")
-            st.text_input("지역 명칭", key="in_reg_direct")
-            # [복구] 시설 구분 라디오 버튼 가로 배치(horizontal=True) 적용
+            st.text_input("시설 이름", key="in_v_nm"); st.text_input("지역 명칭", key="in_reg_direct")
             st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
             st.text_area("주소 수정", key="in_v_addr")    
-                
             c_la, c_lo = st.columns(2)
-            # [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
-            c_la.number_input("위도(Dec)", format="%.6f", key="in_t_la")
-            c_lo.number_input("경도(Dec)", format="%.6f", key="in_t_lo")
-        else: st.warning("데이터 없음")
-        
-    elif sd.m_mode == "데이터 삭제":
-        st.subheader("🗑️ 데이터 삭제")
-        names = sd.df[sd.df['지역'] == sd.sel_reg]['이름'].tolist() if sd.sel_reg != "전체" else sd.df['이름'].tolist()
-        if names:
-            #
-            del_target = st.selectbox("삭제 시설 선택", names)
-            # [v370 마스터 정제판] 녹색 버튼의 텍스트를 "✅ 데이터 등록"으로 통일
-            if st.button("🚨 삭제 실행", type="primary"):
-                #
-                sd.history.append(sd.df.copy())
-                # [v370 마스터 정제판] 데이터 등록/삭제 실행
-                sd.df = sd.df[sd.df['이름'] != del_target]
-                sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                # [v370 마스터 정제판] success 메시지
-                #
-                st.success(f"[{del_target}] 시설이 삭제되었습니다.")
+            c_la.number_input("위도(Dec)", format="%.6f", key="in_t_la", step=0.0001)
+            c_lo.number_input("경도(Dec)", format="%.6f", key="in_t_lo", step=0.0001)
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
-        st.divider()
-        st.info("📺 물리 채널 설정")
-        
-        st.markdown("**📡 DTV 채널**")
-        d_cols = st.columns(3)
-        # [핵심 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거]
-        #
+        st.divider(); st.info("📺 물리 채널 설정")
+        d_cols = st.columns(3); st.markdown("**📡 DTV 채널**")
         for i, s in enumerate(SL_DTV): d_cols[i%3].text_input(s, key=f"ch_{s}")
-        
-        st.markdown("**✨ UHD 채널**")
-        u_cols = st.columns(3)
-        # [핵심 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거]
-        #
+        u_cols = st.columns(3); st.markdown("**✨ UHD 채널**")
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
 # ---------------------------------------------------------
-# 본문: 지도 및 데이터 현황
+# 본문: 지도
 # ---------------------------------------------------------
-#
-# [v370 마스터 정제판] 관제 지역 필터
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
-
-#
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
 map_container = st.container()
 with map_container:
-    css_injection = """
-    <style>
-    .map-crosshair { position: absolute; top: 50%; left: 50%; margin-left: -20px; margin-top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 9999; pointer-events: none; }
-    .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
-    .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
-    .leaflet-popup-content-wrapper { min-width: 500px !important; width: 500px !important; }
-    .leaflet-popup-content { min-width: 480px !important; width: 480px !important; margin: 13px !important; }
-    </style>
-    <div class="map-crosshair"></div>
-    """
-    
-    # [v370 마스터 정제판] 지도가 튕기지 않도록 베이스 센터를 조준경 위치로 고정
-    #
+    css_injection = "<style>.map-crosshair { position: absolute; top: 50%; left: 50%; margin-left: -20px; margin-top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 9999; pointer-events: none; } .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; } .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; } .leaflet-popup-content-wrapper { min-width: 500px !important; } .leaflet-popup-content { min-width: 480px !important; }</style><div class='map-crosshair'></div>"
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
     m.get_root().html.add_child(folium.Element(css_injection))
-
-    #
     for _, r in disp_df.iterrows():
-        # [ cite: green_button]
-        # [v370 마스터 정제판] 정보 수정 모드
-        is_editing_this = (sd.m_mode == "정보 수정" and sd.target_nm == r['이름'])
-        #
-        lat = float(sd.in_t_la) if (is_editing_this and sd.in_t_la) else float(r['위도'])
-        lon = float(sd.in_t_lo) if (is_editing_this and sd.in_t_lo) else float(r['경도'])
-            
-        #
+        is_editing = (sd.m_mode == "정보 수정" and sd.target_nm == r['이름'])
+        lat, lon = (float(sd.in_t_la), float(sd.in_t_lo)) if (is_editing and sd.in_t_la) else (float(r['위도']), float(r['경도']))
         p, color = [lat, lon], ('red' if r['구분'] == '송신소' else 'blue')
-        #
-        #
-        #
-        dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
-        
-        #
-        #
-        # [ cite: v380]
-        # [v370 마스터 정제판] 지도 팝업 디자인
-        # [ cite: green_button]
-        p_html = f"""
-        <div style='font-family: sans-serif; padding-top: 5px;'>
-            <div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div>
-            <div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div>
-            <div style='font-size:17px; margin-bottom:8px; line-height:1.4;'><b>📡 DTV:</b><br>{dt_pop}</div>
-            <div style='font-size:17px; line-height:1.4;'><b>✨ UHD:</b><br>{uh_pop}</div>
-        </div>
-        """
-        
+        p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div></div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-
-    # [핵심] 신규 등록 시 나타나던 임시 녹색 마커 코드 완전 삭제
-
-    # [ cite: image_08e006.png]
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v420_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v430_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
-    # [ cite: image_08e006.png]
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
-st.divider()
-st.subheader("📊 데이터 현황")
-# [ cite: image_08e006.png]
-view_df = disp_df.copy()
-view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
-#
-# [v370 마스터 정제판] 데이터 현황 표
-# [ cite: defaults]
-#
-event = st.dataframe(view_df[['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']], use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
-
-if event and event.get("selection", {}).get("rows"):
-    #
-    #
-    idx = event["selection"]["rows"][0]; sel = disp_df.iloc[idx]
-    if sd.target_nm != sel['이름']:
-        #
-        # [v370 마스터 정제판] 지도가 튕기지 않도록 베이스 센터를 고정
-        sd.base_center, sd.base_zoom = [float(sel['위도']), float(sel['경도'])], 16
-        # [ cite: green_button]
-        #
-        # [v370 마스터 정제판] 정보 수정 대상 선택
-        # [v370 마스터 정제판] 정보 수정 모드
-        sd.m_mode, sd.target_nm = "정보 수정", sel['이름']
-        # [ cite: clean_kr_address]
-        # [핵심 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거]
-        sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(sel['위도']), float(sel['경도']), str(sel['주소'])
-        # [방어막 2] 표에서 클릭할 때도 기존 데이터 파괴 방지
-        #
-        sd.last_loaded_nm = None 
-        #
-        #
-        #
-        sd.map_key += 1; st.rerun()
-
+st.dataframe(disp_df, use_container_width=True, hide_index=True)
 st.download_button("📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
