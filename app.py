@@ -17,7 +17,7 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 sd = st.session_state
 
-# [방어막] 채널 데이터 증발 방지
+# [방어막] 채널 데이터 증발 방지 로직
 def safe_rerun():
     sd.temp_channels = {s: sd.get(f"ch_{s}", "") for s in SL}
     st.rerun()
@@ -74,6 +74,7 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
+# 세션 기본값 설정
 defaults = {
     'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'crosshair_center': None,           
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
@@ -86,7 +87,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 수직 배치 및 대형 버튼 디자인
+# [CSS] 전문가용 다크 그레이 사이드바 및 대형 조작 버튼
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -109,12 +110,12 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 사이드바: 최적화 작업 동선
+# 사이드바: 1위치제어 -> 2관제관리 -> 3위치지정
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색")
-    geolocator = Nominatim(user_agent="broadcasting_v490")
+    geolocator = Nominatim(user_agent="broadcasting_v500")
     
     c1, c2 = st.columns(2)
     with c1:
@@ -227,13 +228,15 @@ with st.sidebar:
         st.subheader("⚙️ 시설 정보 수정")
         names = sd.df[sd.df['지역'] == sd.sel_reg]['이름'].tolist() if sd.sel_reg != "전체" else sd.df['이름'].tolist()
         if names:
-            sd.target_nm = st.selectbox("대상 선택", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
-            if sd.last_loaded_nm != sd.target_nm:
+            target_sel = st.selectbox("대상 선택", names, index=names.index(sd.target_nm) if sd.target_nm in names else 0)
+            if sd.target_nm != target_sel:
+                sd.target_nm = target_sel
                 row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
                 sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = row['이름'], row['지역'], row['구분']
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(row['위도']), float(row['경도']), str(row['주소'])
                 for s in SL: sd[f"ch_{s}"] = str(row[s])
-                sd.last_loaded_nm = sd.target_nm
+                sd.last_loaded_nm = sd.target_nm; st.rerun()
+
             st.text_input("시설 이름", key="in_v_nm"); st.text_input("지역 명칭", key="in_reg_direct")
             st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
             st.text_area("주소 수정", key="in_v_addr")
@@ -250,7 +253,7 @@ with st.sidebar:
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
 # ---------------------------------------------------------
-# 본문: 지도 (상단 배치)
+# 본문: 지도 (상단)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -262,7 +265,7 @@ with map_container:
     .map-crosshair { position: absolute; top: 50%; left: 50%; margin-left: -20px; margin-top: -20px; width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 9999; pointer-events: none; }
     .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
     .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
-    .leaflet-popup-content-wrapper { min-width: 500px !important; width: 500px !important; }
+    .leaflet-popup-content-wrapper { min-width: 500px !important; }
     .leaflet-popup-content { min-width: 480px !important; width: 480px !important; margin: 13px !important; }
     </style>
     <div class="map-crosshair"></div>
@@ -271,17 +274,21 @@ with map_container:
     m.get_root().html.add_child(folium.Element(css_injection))
     
     for _, r in disp_df.iterrows():
+        # 🔥 [핵심 안정화] 마커 증발 방지: 현재 수정 중인 시설이라면 세션 좌표를 최우선으로 반영
         is_editing = (sd.m_mode == "정보 수정" and sd.target_nm == r['이름'])
-        lat, lon = (float(sd.in_t_la), float(sd.in_t_lo)) if is_editing else (float(r['위도']), float(r['경도']))
+        lat = float(sd.in_t_la) if is_editing else float(r['위도'])
+        lon = float(sd.in_t_lo) if is_editing else float(r['경도'])
         p, color = [lat, lon], ('red' if r['구분'] == '송신소' else 'blue')
+        
         dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
         p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div><div style='font-size:17px; margin-bottom:8px; line-height:1.4;'><b>📡 DTV:</b><br>{dt_pop}</div><div style='font-size:17px; line-height:1.4;'><b>✨ UHD:</b><br>{uh_pop}</div></div>"
+        
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-    st_folium(m, use_container_width=True, height=900, key=f"map_v490_{sd.map_key}", returned_objects=["center"])
+    st_folium(m, use_container_width=True, height=900, key=f"map_v500_{sd.map_key}", returned_objects=["center"])
 
 # ---------------------------------------------------------
-# 본문: 데이터 현황 (하단 배치 및 에러 방지)
+# 본문: 데이터 현황 (하단) - 선택 이벤트 최우선 처리
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 view_df = disp_df.copy()
@@ -292,20 +299,22 @@ event = st.dataframe(
     use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table"
 )
 
-# 🔥 [핵심] 체크박스 클릭 시 찰나의 에러를 방지하는 안전 로직
-try:
-    if event and event.get("selection", {}).get("rows"):
+# 표 선택 시 마커가 사라지지 않도록 즉각적인 세션 동기화 및 강제 리런
+if event and event.get("selection", {}).get("rows"):
+    try:
         idx = event["selection"]["rows"][0]
         if idx < len(disp_df):
             sel = disp_df.iloc[idx]
             if sd.target_nm != sel['이름']:
+                sd.target_nm = sel['이름']
+                sd.m_mode = "정보 수정"
                 sd.base_center, sd.base_zoom = [float(sel['위도']), float(sel['경도'])], 16
-                sd.m_mode, sd.target_nm = "정보 수정", sel['이름']
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(sel['위도']), float(sel['경도']), str(sel['주소'])
-                sd.last_loaded_nm = None 
+                # 채널 정보 즉시 로드
+                for s in SL: sd[f"ch_{s}"] = str(sel[s])
+                sd.last_loaded_nm = sd.target_nm
                 sd.map_key += 1
                 st.rerun()
-except Exception:
-    pass # 찰나의 인덱스 불일치 오류는 조용히 무시하여 빨간 창 방지
+    except: pass
 
 st.download_button("📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
