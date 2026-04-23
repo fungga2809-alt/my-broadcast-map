@@ -61,13 +61,9 @@ st.markdown("""
     
     .leaflet-popup-content { font-size: 14px !important; width: 250px !important; line-height: 1.6; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
-
-    /* [추가] 사이드바 버튼 사이의 간격을 강제로 줄임 */
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
-        gap: 0px !important; 
-    }
     </style>
     """, unsafe_allow_html=True)
+
 # ---------------------------------------------------------
 # [2] 사이드바: v122 UI 개선 레이아웃
 # ---------------------------------------------------------
@@ -82,7 +78,7 @@ with st.sidebar:
     if st.button("📍 위치 검색"):
         if search_addr:
             try:
-                geolocator = Nominatim(user_agent="broadcasting_v122_fix")
+                geolocator = Nominatim(user_agent="broadcasting_v122")
                 loc = geolocator.geocode(search_addr)
                 if loc:
                     sd.center = [loc.latitude, loc.longitude]
@@ -91,8 +87,8 @@ with st.sidebar:
                     sd.map_key += 1; st.rerun()
             except: st.error("검색 오류")
 
-    # 버튼 비율을 [1, 1]로 조정하여 더 가깝게 만듦
-    c1, c2 = st.columns([1, 1], gap="small") 
+    # [v122 수정] 버튼 간격 및 비율 최적화
+    c1, c2 = st.columns([1, 1.2], gap="small") 
     with c1:
         if st.button("🎯 내 위치"):
             gps = get_geolocation()
@@ -134,6 +130,7 @@ with st.sidebar:
     sd["v_cat"] = st.radio("시설 구분", ["송신소", "중계소"], index=0 if sd.get("v_cat")=="송신소" else 1)
     st.text_input("송신소/중계소 이름", key="v_nm")
     
+    # 좌표 입력 (지도 클릭과 연동)
     disp_la = float(sd.t_la if sd.t_la is not None else sd.center[0])
     disp_lo = float(sd.t_lo if sd.t_lo is not None else sd.center[1])
     new_la = st.number_input("위도", value=disp_la, format="%.6f")
@@ -142,8 +139,10 @@ with st.sidebar:
         sd.t_la, sd.t_lo = new_la, new_lo
 
     st.subheader("📺 물리 채널 설정")
+    st.info("📡 **DTV 채널**")
     d_cols = st.columns(3)
     for i, s in enumerate(SL_DTV): d_cols[i%3].text_input(s, key=f"ch_{s}")
+    st.warning("✨ **UHD 채널**")
     u_cols = st.columns(3)
     for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
@@ -160,7 +159,7 @@ with st.sidebar:
             st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문: 지도
+# [3] 본문: 지도 (v70 팝업 및 명칭 강조)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 마스터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -182,8 +181,9 @@ for _, r in disp_df.iterrows():
 if sd.t_la is not None:
     folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v122_fixed_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v122_{sd.map_key}")
 
+# v70 순정 클릭 로직 (마커 이동 자유)
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
@@ -192,7 +192,7 @@ if map_data.get("last_clicked"):
         st.rerun()
 
 # ---------------------------------------------------------
-# [4] 하단: 데이터 표
+# [4] 하단: 데이터 표 (색상 및 중앙 정렬 강화)
 # ---------------------------------------------------------
 st.divider()
 def style_table(row):
@@ -215,4 +215,4 @@ if event and event.get("selection", {}).get("rows"):
         sd.t_la, sd.t_lo = None, None
         sd.map_key += 1; st.rerun()
 
-st.download_button("📥 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
+st.download_button("📥 전체 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
