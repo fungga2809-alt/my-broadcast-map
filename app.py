@@ -55,7 +55,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] UI 스타일 (외부 조준경 CSS 제거, 순수 UI만 남김)
+# [CSS] UI 스타일
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -78,7 +78,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v285")
+    geolocator = Nominatim(user_agent="broadcasting_v290")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -105,7 +105,6 @@ with st.sidebar:
             if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
-    # [핵심] 중앙 위치 획득 버튼
     if st.button("🎯 지도 중앙을 등록 위치로 지정", type="primary"):
         sd.t_la, sd.t_lo = sd.center[0], sd.center[1]
         try:
@@ -131,7 +130,23 @@ with st.sidebar:
         final_reg = st.text_input("📝 새 지역 명칭", "") if sel_reg == "+ 직접 입력" else sel_reg
         v_nm = st.text_input("2. 시설 이름")
         v_cat = st.radio("3. 시설 구분", ["송신소", "중계소"], horizontal=True)
-        sd.v_addr = st.text_area("4. 주소 확인/수정", value=sd.v_addr)
+        
+        addr_api_query = st.text_input("4. 주소 검색(API)", "")
+        if st.button("🏠 주소 자동 찾기"):
+            if addr_api_query:
+                try:
+                    loc = geolocator.geocode(addr_api_query)
+                    if loc:
+                        sd.v_addr, sd.t_la, sd.t_lo = loc.address, loc.latitude, loc.longitude
+                        sd.center = [loc.latitude, loc.longitude]; sd.map_key += 1; st.rerun()
+                except: st.error("검색 실패")
+        
+        sd.v_addr = st.text_area("5. 주소 확인/수정", value=sd.v_addr)
+        
+        # [복구] 수동 좌표 입력을 위한 칸
+        c_la, c_lo = st.columns(2)
+        sd.t_la = c_la.number_input("6. 위도(Dec)", value=float(sd.t_la if sd.t_la is not None else sd.center[0]), format="%.6f")
+        sd.t_lo = c_lo.number_input("7. 경도(Dec)", value=float(sd.t_lo if sd.t_lo is not None else sd.center[1]), format="%.6f")
 
     elif sd.m_mode == "정보 수정":
         st.subheader("⚙️ 시설 정보 수정")
@@ -142,9 +157,14 @@ with st.sidebar:
             v_nm, final_reg = st.text_input("시설 이름", value=row['이름']), st.text_input("지역 명칭", value=row['지역'])
             v_cat = st.radio("구분", ["송신소", "중계소"], index=0 if row['구분']=="송신소" else 1, horizontal=True)
             sd.v_addr = st.text_area("주소 수정", value=str(row['주소']))
+            
+            if sd.last_loaded_nm != sd.target_nm:
+                sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
+                sd.last_loaded_nm = sd.target_nm
+                
             c_la, c_lo = st.columns(2)
-            sd.t_la = c_la.number_input("위도(Dec)", value=float(row['위도']), format="%.6f")
-            sd.t_lo = c_lo.number_input("경도(Dec)", value=float(row['경도']), format="%.6f")
+            sd.t_la = c_la.number_input("위도(Dec)", value=float(sd.t_la), format="%.6f")
+            sd.t_lo = c_lo.number_input("경도(Dec)", value=float(sd.t_lo), format="%.6f")
         else: st.warning("데이터 없음"); final_reg, v_cat, v_nm = "", "중계소", ""
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
@@ -158,7 +178,10 @@ with st.sidebar:
         if st.button("✅ 데이터 저장"):
             if v_nm and final_reg:
                 sd.history.append(sd.df.copy())
-                v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(sd.t_la if sd.t_la else cur_la), str(sd.t_lo if sd.t_lo else cur_lo), sd.v_addr]
+                # 수동 수정된 값 또는 현재 지정된 좌표를 저장
+                save_la = str(sd.t_la if sd.t_la is not None else sd.center[0])
+                save_lo = str(sd.t_lo if sd.t_lo is not None else sd.center[1])
+                v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [save_la, save_lo, sd.v_addr]
                 if sd.m_mode == "정보 수정": sd.df.loc[sd.df['이름'] == sd.target_nm] = v
                 else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
@@ -171,51 +194,44 @@ st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 
-m = folium.Map(location=sd.center, zoom_start=sd.zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
+map_container = st.container()
+with map_container:
+    # 지도 내부 조준경 유지
+    crosshair_html = """
+    <style>
+    .map-crosshair {
+        position: absolute; top: 50%; left: 50%;
+        margin-left: -20px; margin-top: -20px;
+        width: 40px; height: 40px;
+        border: 2px solid #ff4b4b; border-radius: 50%;
+        z-index: 9999; pointer-events: none;
+    }
+    .map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
+    .map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
+    </style>
+    <div class="map-crosshair"></div>
+    """
+    m = folium.Map(location=sd.center, zoom_start=sd.zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
+    m.get_root().html.add_child(folium.Element(crosshair_html))
 
-# [수정] 조준경을 지도 iframe 내부에 직접 이식 (절대 벗어나지 않음)
-crosshair_html = """
-<style>
-.map-crosshair {
-    position: absolute; top: 50%; left: 50%;
-    margin-left: -20px; margin-top: -20px;
-    width: 40px; height: 40px;
-    border: 2px solid #ff4b4b; border-radius: 50%;
-    z-index: 9999; pointer-events: none;
-}
-.map-crosshair::before { content: ''; position: absolute; top: 18px; left: -10px; width: 56px; height: 2px; background: #ff4b4b; }
-.map-crosshair::after { content: ''; position: absolute; left: 18px; top: -10px; height: 56px; width: 2px; background: #ff4b4b; }
-</style>
-<div class="map-crosshair"></div>
-"""
-m.get_root().html.add_child(folium.Element(crosshair_html))
+    for _, r in disp_df.iterrows():
+        p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
+        dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
+        p_html = f"<div style='width:400px; padding: 5px;'><b style='font-size:18px;'>[{r['구분']}] {r['이름']}</b><br><span style='color:gray;'>{r['주소']}</span><hr><b>📡 DTV:</b> {dt_pop}<br><b>✨ UHD:</b> {uh_pop}</div>"
+        folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
+        folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=500)).add_to(m)
 
-for _, r in disp_df.iterrows():
-    p, color = [float(r['위도']), float(r['경도'])], ('red' if r['구분'] == '송신소' else 'blue')
-    dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
-    p_html = f"<div style='width:400px; padding: 5px;'><b style='font-size:18px;'>[{r['구분']}] {r['이름']}</b><br><span style='color:gray;'>{r['주소']}</span><hr><b>📡 DTV:</b> {dt_pop}<br><b>✨ UHD:</b> {uh_pop}</div>"
-    folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
-    folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=500)).add_to(m)
+    if sd.m_mode == "신규 등록" and sd.t_la:
+        folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-if sd.m_mode == "신규 등록" and sd.t_la:
-    folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
+    map_data = st_folium(m, use_container_width=True, height=700, key=f"map_v290_{sd.map_key}")
 
-# [수정] use_container_width=True 강제로 지도 찌그러짐 방지
-map_data = st_folium(m, use_container_width=True, height=700, key=f"map_v285_{sd.map_key}")
-
+# 지도 중심 이동 및 확대 배율 저장
 if map_data:
     if map_data.get("center"): sd.center = [map_data["center"]["lat"], map_data["center"]["lng"]]
     if map_data.get("zoom"): sd.zoom = map_data["zoom"]
 
-if map_data and map_data.get("last_clicked"):
-    cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-    if sd.t_la != cla:
-        sd.t_la, sd.t_lo = cla, clo
-        try:
-            rev = geolocator.reverse(f"{cla}, {clo}")
-            if rev: sd.v_addr = rev.address
-        except: pass
-        sd.m_mode = "신규 등록"; st.rerun()
+# [수정 사항] 지도 마커 클릭 이벤트를 통한 좌표 획득 로직을 완전히 제거했습니다.
 
 st.divider()
 st.subheader("📊 데이터 현황")
