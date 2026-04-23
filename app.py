@@ -9,7 +9,7 @@ from geopy.geocoders import Nominatim
 st.set_page_config(page_title="Broadcasting Infrastructure Master", layout="wide")
 DB = 'stations.csv'
 
-# [정의] 채널 및 컬럼 (메모 -> 주소 변경)
+# [정의] 채널 및 컬럼
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
@@ -77,12 +77,12 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# [2] 사이드바: 관제 도구
+# [2] 사이드바: 관제 도구 및 정보 복사
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
     
-    # 🗺️ 지역 필터
+    # 🗺️ 상단 지역 필터
     existing_regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, 
                              index=0 if sd.sel_reg == "전체" else (existing_regs.index(sd.sel_reg)+1 if sd.sel_reg in existing_regs else 0))
@@ -94,7 +94,7 @@ with st.sidebar:
         if st.button("📍검색"):
             if search_addr:
                 try:
-                    geolocator = Nominatim(user_agent="broadcasting_v195")
+                    geolocator = Nominatim(user_agent="broadcasting_v200")
                     loc = geolocator.geocode(search_addr)
                     if loc:
                         sd.center, sd.t_la, sd.t_lo = [loc.latitude, loc.longitude], loc.latitude, loc.longitude
@@ -147,27 +147,25 @@ with st.sidebar:
             if st.button("🚨 삭제 실행", type="primary"):
                 sd.history.append(sd.df.copy()); sd.df = sd.df[sd.df['이름'] != del_target]; sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
-    # 입력 폼
+    # [수정] 복사 전용 박스 (등록/수정 시 실시간 동기화)
     if sd.m_mode in ["신규 등록", "정보 수정"]:
-        st.subheader("📋 개별 정보 복사")
+        st.subheader("📋 선택 시설 정보 복사")
         cur_lat = sd.t_la if sd.t_la is not None else sd.center[0]
         cur_lon = sd.t_lo if sd.t_lo is not None else sd.center[1]
         
-        # [수정] 좌표 복사 칸
-        st.caption("📍 구글 지도용 좌표 (DMS)")
+        st.caption("📍 구글 지도용 통합 좌표")
         st.code(get_google_format(cur_lat, cur_lon), language=None)
         
-        # [수정] 주소 복사 칸 (항상 보이게 하여 가시성 확보)
-        st.caption("📝 시설 주소 복사")
+        st.caption("📝 상세 주소 복사")
         st.code(sd.v_addr if sd.v_addr else "주소를 입력하세요", language=None)
         
         st.divider()
         c_la, c_lo = st.columns(2)
         sd.t_la = c_la.number_input("위도(Dec)", value=float(cur_lat), format="%.6f")
         sd.t_lo = c_lo.number_input("경도(Dec)", value=float(cur_lon), format="%.6f")
-        sd.v_addr = st.text_area("상세 주소 입력", value=sd.v_addr)
+        sd.v_addr = st.text_area("주소 입력/수정", value=sd.v_addr)
 
-        # [수정] 채널 설정 디자인 복구 (for 루프 사용하여 지저분한 리스트 출력 제거)
+        # [수정] 채널 설정 JSON 리스트 출력 방지
         st.info("📺 물리 채널 설정")
         st.markdown("**📡 DTV 채널**")
         d_cols = st.columns(3)
@@ -209,18 +207,19 @@ for _, r in disp_df.iterrows():
 
 if sd.t_la is not None: folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-map_data = st_folium(m, width="100%", height=700, key=f"map_v195_{sd.map_key}")
+map_data = st_folium(m, width="100%", height=700, key=f"map_v200_{sd.map_key}")
 
+# 지도 클릭 시
 if map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla or sd.t_lo != clo:
         sd.t_la, sd.t_lo = cla, clo
-        sd.m_mode, sd.target_nm, sd.last_loaded_nm = "신규 등록", None, "NEW"
-        sd.map_key += 1; st.rerun()
+        sd.m_mode, sd.target_nm, sd.last_loaded_nm = "신규 등록", None, "NEW"; sd.map_key += 1; st.rerun()
 
 st.divider()
-st.subheader("📊 데이터 현황") # [수정] 제목 복구
+st.subheader("📊 데이터 현황")
 
+# 표 표시용 가공
 view_df = disp_df.copy()
 view_df['통합 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
 V_CL = ['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']
@@ -228,14 +227,16 @@ V_CL = ['지역', '구분', '이름'] + SL + ['통합 좌표', '주소']
 styled_df = view_df[V_CL].style.apply(lambda r: ['background-color:#ffebee;color:#d32f2f;font-weight:bold;text-align:center;']*len(r) if r['구분']=='송신소' else ['background-color:#e3f2fd;color:#1976d2;text-align:center;']*len(r), axis=1)
 event = st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
 
-# 무한 리부팅 방지
+# [핵심] 표 클릭 시 주소 복사 칸 실시간 연동
 if event and event.get("selection", {}).get("rows"):
     idx = event["selection"]["rows"][0]
     sel_row = disp_df.iloc[idx]
     if sd.target_nm != sel_row['이름']:
         sd.center = [float(sel_row['위도']), float(sel_row['경도'])]
         sd.m_mode, sd.target_nm, sd.last_loaded_nm = "정보 수정", sel_row['이름'], None
-        sd.t_la, sd.t_lo = None, None
+        # 표 클릭 시 주소와 좌표를 즉시 세션에 주입하여 복사 박스에 바로 뜨게 함
+        sd.v_addr = str(sel_row['주소'])
+        sd.t_la, sd.t_lo = float(sel_row['위도']), float(sel_row['경도'])
         sd.map_key += 1; st.rerun()
 
 st.download_button("📥 전체 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv')
