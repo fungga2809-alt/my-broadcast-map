@@ -54,7 +54,6 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# [핵심] 모든 입력 폼의 데이터를 세션에 직접 연결하여 깜빡임 제거
 defaults = {
     'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'crosshair_center': None,           
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
@@ -67,15 +66,24 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
+# [CSS] UI 스타일 고도화 (버튼 간격 축소 포함)
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
+    
+    /* 3색 액션 버튼 CSS 강제 주입 */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
+    
+    /* [핵심 개선] 사이드바 내 컬럼(위치 제어 버튼 등)의 간격을 대폭 축소 */
+    [data-testid="stSidebar"] [data-testid="column"] {
+        padding-left: 2px !important;
+        padding-right: 2px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -91,8 +99,8 @@ with st.sidebar:
 
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색")
-    c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v380")
+    c_loc = st.columns([1, 1, 1]) # [개선] gap="small"을 제거하고 순수 CSS로 간격 압축
+    geolocator = Nominatim(user_agent="broadcasting_v385")
 
     with c_loc[0]:
         if st.button("🔍 검색"):
@@ -105,7 +113,6 @@ with st.sidebar:
                         sd.map_key += 1
                 except: st.error("오류")
     with c_loc[1]:
-        # [수정] 조준경 아이콘(🎯)과 헷갈리지 않도록 나침반(🧭) 아이콘으로 변경
         if st.button("🧭 내 위치"):
             gps = get_geolocation()
             if gps and 'coords' in gps:
@@ -122,10 +129,6 @@ with st.sidebar:
                 sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
 
     st.divider()
-    
-    # =========================================================
-    # [핵심] 3색 커맨드 센터 (빠른 응답 & 깜빡임 제로)
-    # =========================================================
     
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 지도 중앙을 신규 위치로 지정"):
@@ -151,7 +154,6 @@ with st.sidebar:
             if rev: sd.in_v_addr = clean_kr_address(rev.address)
         except: pass
 
-    # [수정] Placeholder 제거. 직접 렌더링으로 깜빡임 차단
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
         if st.button("✅ 데이터 등록"):
@@ -166,7 +168,6 @@ with st.sidebar:
                     sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
                 
-                # 저장 후 폼 깔끔하게 초기화
                 sd.in_v_nm, sd.in_v_addr, sd.last_loaded_nm = "", "", None 
                 for s in SL: sd[f"ch_{s}"] = ""
                 st.success("데이터가 안전하게 등록되었습니다!")
@@ -174,7 +175,6 @@ with st.sidebar:
                 st.warning("시설 이름과 지역 명칭을 입력해주세요.")
 
     st.divider()
-    # =========================================================
 
     st.subheader("📋 정보 원클릭 복사")
     st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language=None)
@@ -200,7 +200,8 @@ with st.sidebar:
             st.text_input("📝 새 지역 명칭", key="in_reg_direct")
         
         st.text_input("2. 시설 이름", key="in_v_nm")
-        st.radio("3. 시설 구분", ["송신소", "중계소"], key="in_v_cat")
+        # [복구] 시설 구분 라디오 버튼 가로 배치(horizontal=True) 적용
+        st.radio("3. 시설 구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
         
         addr_api_query = st.text_input("4. 주소 검색(API)")
         if st.button("🏠 주소 자동 찾기"):
@@ -237,7 +238,8 @@ with st.sidebar:
             
             st.text_input("시설 이름", key="in_v_nm")
             st.text_input("지역 명칭", key="in_reg_direct")
-            st.radio("구분", ["송신소", "중계소"], key="in_v_cat")
+            # [복구] 시설 구분 라디오 버튼 가로 배치(horizontal=True) 적용
+            st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
             st.text_area("주소 수정", key="in_v_addr")    
                 
             c_la, c_lo = st.columns(2)
@@ -311,7 +313,10 @@ with map_container:
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
 
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v380_{sd.map_key}", returned_objects=["center"])
+    if sd.m_mode == "신규 등록" and sd.in_t_la is not None:
+        folium.Marker([sd.in_t_la, sd.in_t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
+
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v385_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
