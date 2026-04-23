@@ -43,7 +43,7 @@ def load_data():
 
 if 'df' not in sd: sd.df = load_data()
 
-# 세션 상태 초기화 (지도 중심 및 확대 배율 저장 추가)
+# 세션 상태 초기화
 defaults = {
     'center': [35.1796, 129.0756], 'zoom': 14, 't_la': None, 't_lo': None, 
     'history': [], 'map_key': 0, 'sel_reg': "전체", 
@@ -55,27 +55,21 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 조준경 UI 및 팝업 스타일
+# [CSS] 조준경 및 UI 스타일
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
-    th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
+    th { text-align: center !important; background-color: #f0f2f6 !important; font-size: 18px !important; font-weight: bold !important; }
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     .leaflet-popup-content { font-size: 14px !important; width: 420px !important; line-height: 1.6; }
-    
-    /* 지도 중앙 조준경 스타일 */
+    /* 지도 중앙 조준경 */
     .crosshair {
         position: absolute; top: 50%; left: 50%;
-        width: 40px; height: 40px;
-        margin-left: -20px; margin-top: -45px; /* 마커 바닥 위치 보정 */
-        z-index: 1000; pointer-events: none;
-        border: 2px solid #ff4b4b; border-radius: 50%;
+        width: 40px; height: 40px; margin-left: -20px; margin-top: -45px;
+        z-index: 1000; pointer-events: none; border: 2px solid #ff4b4b; border-radius: 50%;
     }
-    .crosshair::before, .crosshair::after {
-        content: ''; position: absolute; background: #ff4b4b;
-    }
-    .crosshair::before { top: 50%; left: -10px; right: -10px; height: 2px; }
-    .crosshair::after { left: 50%; top: -10px; bottom: -10px; width: 2px; }
+    .crosshair::before { content: ''; position: absolute; top: 50%; left: -10px; right: -10px; height: 2px; background: #ff4b4b; }
+    .crosshair::after { content: ''; position: absolute; left: 50%; top: -10px; bottom: -10px; width: 2px; background: #ff4b4b; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -91,7 +85,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v280")
+    geolocator = Nominatim(user_agent="broadcasting_v281")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -117,10 +111,9 @@ with st.sidebar:
         if st.button("↩️복구"):
             if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
-    # --- [핵심 추가] 중앙 위치 획득 버튼 ---
     st.divider()
+    # [핵심] 중앙 위치 획득 버튼
     if st.button("🎯 지도 중앙을 등록 위치로 지정", type="primary"):
-        # sd.center는 지도를 움직일 때마다 업데이트됨 (하단 st_folium 로직 참고)
         sd.t_la, sd.t_lo = sd.center[0], sd.center[1]
         try:
             rev = geolocator.reverse(f"{sd.t_la}, {sd.t_lo}")
@@ -129,8 +122,6 @@ with st.sidebar:
         sd.m_mode = "신규 등록"; st.rerun()
 
     st.divider()
-    
-    # 📋 정보 원클릭 복사
     st.subheader("📋 정보 원클릭 복사")
     cur_la = sd.t_la if sd.t_la is not None else sd.center[0]
     cur_lo = sd.t_lo if sd.t_lo is not None else sd.center[1]
@@ -165,7 +156,7 @@ with st.sidebar:
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider()
-        st.info("📺 채널 설정")
+        st.info("📺 물리 채널 설정")
         d_cols = st.columns(3); st.markdown("**📡 DTV**")
         for i, s in enumerate(SL_DTV): d_cols[i%3].text_input(s, key=f"ch_{s}")
         u_cols = st.columns(3); st.markdown("**✨ UHD**")
@@ -181,16 +172,17 @@ with st.sidebar:
                 sd.t_la, sd.t_lo, sd.v_addr = None, None, ""; st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
-# [3] 본문
+# [3] 본문: 지도 및 데이터 현황
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 
-# 조준경 컨테이너
+# [중요] NameError 해결을 위해 disp_df 정의
+disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
+
+# 조준경 및 지도 출력
 map_container = st.container()
 with map_container:
-    # 지도 위에 조준경 띄우기
     st.markdown('<div class="crosshair"></div>', unsafe_allow_html=True)
-    
     m = folium.Map(location=sd.center, zoom_start=sd.zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
 
     for _, r in disp_df.iterrows():
@@ -203,16 +195,14 @@ with map_container:
     if sd.m_mode == "신규 등록" and sd.t_la:
         folium.Marker([sd.t_la, sd.t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-    map_data = st_folium(m, width="100%", height=700, key=f"map_v280_{sd.map_key}")
+    map_data = st_folium(m, width="100%", height=700, key=f"map_v281_{sd.map_key}")
 
-# [중요] 지도 이동 시 상태 업데이트 (튐 방지 및 센터 캡처용)
+# 지도 이동 상태 업데이트 (튐 방지)
 if map_data:
-    if map_data.get("center"):
-        sd.center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-    if map_data.get("zoom"):
-        sd.zoom = map_data["zoom"]
+    if map_data.get("center"): sd.center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+    if map_data.get("zoom"): sd.zoom = map_data["zoom"]
 
-# 지도 클릭 시 (기존 기능 유지)
+# 지도 클릭 시
 if map_data and map_data.get("last_clicked"):
     cla, clo = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
     if sd.t_la != cla:
