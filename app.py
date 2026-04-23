@@ -66,7 +66,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] UI 스타일 고도화 (버튼 간격 축소 포함)
+# [CSS] Streamlit의 철벽 같은 간격 설정을 강제로 뚫어내는 CSS
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -74,15 +74,24 @@ st.markdown("""
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
     
-    /* 3색 액션 버튼 CSS 강제 주입 */
+    /* 3색 액션 버튼 */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
     
-    /* [핵심 개선] 사이드바 내 컬럼(위치 제어 버튼 등)의 간격을 대폭 축소 */
-    [data-testid="stSidebar"] [data-testid="column"] {
-        padding-left: 2px !important;
-        padding-right: 2px !important;
+    /* 🔥 [핵심] 사이드바 내부 3단 컬럼의 갭(Gap) 완전 파괴 */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+        gap: 3px !important; /* 원래 16px(1rem)이던 갭을 3px로 압축! */
+    }
+    /* 컬럼 내부 패딩 제거 및 너비 강제 할당 */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        padding: 0 !important;
+        min-width: 30% !important;
+    }
+    /* 좁아진 버튼 글자가 짤리지 않도록 내부 여백 최적화 */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button {
+        padding: 0 2px !important; 
+        font-size: 15px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -99,8 +108,10 @@ with st.sidebar:
 
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색")
-    c_loc = st.columns([1, 1, 1]) # [개선] gap="small"을 제거하고 순수 CSS로 간격 압축
-    geolocator = Nominatim(user_agent="broadcasting_v385")
+    
+    # 여기서 만들어지는 3개의 열이 CSS의 타겟이 되어 바짝 붙습니다.
+    c_loc = st.columns([1, 1, 1]) 
+    geolocator = Nominatim(user_agent="broadcasting_v390")
 
     with c_loc[0]:
         if st.button("🔍 검색"):
@@ -200,7 +211,6 @@ with st.sidebar:
             st.text_input("📝 새 지역 명칭", key="in_reg_direct")
         
         st.text_input("2. 시설 이름", key="in_v_nm")
-        # [복구] 시설 구분 라디오 버튼 가로 배치(horizontal=True) 적용
         st.radio("3. 시설 구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
         
         addr_api_query = st.text_input("4. 주소 검색(API)")
@@ -238,7 +248,6 @@ with st.sidebar:
             
             st.text_input("시설 이름", key="in_v_nm")
             st.text_input("지역 명칭", key="in_reg_direct")
-            # [복구] 시설 구분 라디오 버튼 가로 배치(horizontal=True) 적용
             st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
             st.text_area("주소 수정", key="in_v_addr")    
                 
@@ -316,7 +325,7 @@ with map_container:
     if sd.m_mode == "신규 등록" and sd.in_t_la is not None:
         folium.Marker([sd.in_t_la, sd.in_t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
 
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v385_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v390_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
