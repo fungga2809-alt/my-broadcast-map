@@ -35,10 +35,8 @@ def clean_kr_address(addr_str):
     parts = [p.strip() for p in addr_str.split(',')]
     filtered = []
     for p in parts:
-        if p == "대한민국" or re.match(r'^\d{4,5}$', p): 
-            continue
-        if re.search(r'(도|광역시|특별시|자치시|시|군|구)$', p) and len(p) <= 7:
-            continue
+        if p == "대한민국" or re.match(r'^\d{4,5}$', p): continue
+        if re.search(r'(도|광역시|특별시|자치시|시|군|구)$', p) and len(p) <= 7: continue
         filtered.append(p)
     filtered.reverse()
     return " ".join(filtered)
@@ -49,8 +47,7 @@ def load_data():
         if '메모' in df.columns: df.rename(columns={'메모': '주소'}, inplace=True)
         if '지역' not in df.columns: df.insert(0, '지역', '미지정')
         return df.reindex(columns=CL, fill_value="")
-    except:
-        return pd.DataFrame(columns=CL, dtype=str)
+    except: return pd.DataFrame(columns=CL, dtype=str)
 
 if 'df' not in sd: sd.df = load_data()
 
@@ -66,7 +63,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [CSS] 허접해 보이던 3버튼 그룹을 묵직하고 세련되게 성형
+# [CSS] 사이드바 배경색 강화 및 버튼 대형화 디자인
 st.markdown("""
     <style>
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -74,32 +71,29 @@ st.markdown("""
     .stButton > button { width: 100%; border-radius: 8px; font-weight: bold; min-height: 45px; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
     
-    /* 하단 3색 액션 버튼 */
+    /* 🔥 [핵심 1] 좌측 사이드바 배경색을 조금 더 어둡게 */
+    [data-testid="stSidebar"] {
+        background-color: #eff2f6 !important;
+    }
+    
+    /* 3색 액션 버튼 */
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; border: none !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; border: none !important; }
     
-    /* 🔥 [핵심] 상단 위치 제어 3버튼 (검색/내위치/복구) 디자인 환골탈태 */
+    /* 🔥 [핵심 2] 상단 3버튼 (검색/내위치/복구) 사각형 대폭 대형화 */
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type {
-        gap: 4px !important; /* 사이 간격을 4px로 초밀착 */
-    }
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type > div[data-testid="column"] {
-        width: 33.3% !important;
-        min-width: 0 !important;
+        gap: 5px !important;
     }
     [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button {
-        width: 100% !important; /* 버튼이 컬럼 공간을 100% 꽉 채움 */
-        padding: 8px 0 !important; /* 텍스트 주변의 빈 공간을 버튼 영역으로 흡수 */
-        font-size: 15px !important;
-        background-color: #f1f3f5 !important; /* 둥둥 떠보이지 않게 연한 회색 바탕 추가 */
-        border: 1px solid #ced4da !important;
+        width: 100% !important;
+        padding: 15px 0 !important; /* 세로 두께를 더 키워 큼직하게 변경 */
+        font-size: 16px !important; /* 글자도 더 잘 보이게 확대 */
+        background-color: #ffffff !important; /* 어두워진 배경 대비를 위해 흰색 바탕 */
+        border: 1px solid #c6ccd2 !important;
         border-radius: 6px !important;
-        color: #495057 !important;
-        box-shadow: none !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"]:first-of-type button:hover {
-        background-color: #e9ecef !important;
-        border-color: #adb5bd !important;
+        color: #31333f !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -115,12 +109,10 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 관제 지역 필터", ["전체"] + existing_regs, index=filter_idx)
 
     st.subheader("🔍 위치 제어")
-    
     search_addr = st.text_input("주소/건물명 검색")
     
-    # 꽉 채워진 솔리드 스타일의 3버튼 그룹
     c_loc = st.columns([1, 1, 1]) 
-    geolocator = Nominatim(user_agent="broadcasting_v400")
+    geolocator = Nominatim(user_agent="broadcasting_v410")
 
     with c_loc[0]:
         if st.button("🔍 검색"):
@@ -145,8 +137,7 @@ with st.sidebar:
                 sd.map_key += 1
     with c_loc[2]:
         if st.button("↩️ 복구"):
-            if sd.history: 
-                sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
+            if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
 
     st.divider()
     
@@ -178,21 +169,16 @@ with st.sidebar:
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
         if st.button("✅ 데이터 등록"):
             final_reg = sd.in_reg_direct if (sd.m_mode == "신규 등록" and sd.in_reg_box == "+ 직접 입력") else sd.in_reg_box if sd.m_mode == "신규 등록" else sd.in_reg_direct
-            
             if sd.in_v_nm and final_reg:
                 sd.history.append(sd.df.copy())
                 v = [final_reg, sd.in_v_cat, sd.in_v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
-                if sd.m_mode == "정보 수정" and sd.target_nm: 
-                    sd.df.loc[sd.df['이름'] == sd.target_nm] = v
-                else: 
-                    sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+                if sd.m_mode == "정보 수정" and sd.target_nm: sd.df.loc[sd.df['이름'] == sd.target_nm] = v
+                else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                
                 sd.in_v_nm, sd.in_v_addr, sd.last_loaded_nm = "", "", None 
                 for s in SL: sd[f"ch_{s}"] = ""
                 st.success("데이터가 안전하게 등록되었습니다!")
-            else:
-                st.warning("시설 이름과 지역 명칭을 입력해주세요.")
+            else: st.warning("시설 이름과 지역 명칭을 입력해주세요.")
 
     st.divider()
 
@@ -201,11 +187,9 @@ with st.sidebar:
     st.code(sd.in_v_addr if sd.in_v_addr else "위치를 지정하세요", language=None)
 
     st.divider()
-    
     mode_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     m_idx = mode_opts.index(sd.m_mode) if sd.m_mode in mode_opts else 0
     selected_mode = st.radio("🛠️ 현재 작업 모드 상태", mode_opts, index=m_idx, horizontal=True)
-    
     if selected_mode != sd.m_mode:
         sd.m_mode = selected_mode
         if sd.m_mode == "신규 등록":
@@ -216,12 +200,9 @@ with st.sidebar:
         st.subheader("🆕 신규 시설 등록")
         reg_opts = ["+ 직접 입력"] + existing_regs
         st.selectbox("1. 지역 선택", reg_opts, key="in_reg_box")
-        if sd.in_reg_box == "+ 직접 입력":
-            st.text_input("📝 새 지역 명칭", key="in_reg_direct")
-        
+        if sd.in_reg_box == "+ 직접 입력": st.text_input("📝 새 지역 명칭", key="in_reg_direct")
         st.text_input("2. 시설 이름", key="in_v_nm")
         st.radio("3. 시설 구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
-        
         addr_api_query = st.text_input("4. 주소 검색(API)")
         if st.button("🏠 주소 자동 찾기"):
             if addr_api_query:
@@ -232,7 +213,6 @@ with st.sidebar:
                         sd.base_center, sd.base_zoom = [loc.latitude, loc.longitude], 16
                         sd.map_key += 1
                 except: st.error("검색 실패")
-        
         st.text_area("5. 주소 확인/수정", key="in_v_addr")
         c_la, c_lo = st.columns(2)
         c_la.number_input("6. 위도(Dec)", format="%.6f", key="in_t_la")
@@ -244,22 +224,16 @@ with st.sidebar:
         if names:
             tgt_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
             sd.target_nm = st.selectbox("대상 선택", names, index=tgt_idx)
-            
             if sd.last_loaded_nm != sd.target_nm:
                 row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
-                sd.in_v_nm = row['이름']
-                sd.in_reg_direct = row['지역']
-                sd.in_v_cat = row['구분']
-                sd.in_t_la, sd.in_t_lo = float(row['위도']), float(row['경도'])
-                sd.in_v_addr = str(row['주소'])
+                sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = row['이름'], row['지역'], row['구분']
+                sd.in_t_la, sd.in_t_lo, sd.in_v_addr = float(row['위도']), float(row['경도']), str(row['주소'])
                 for s in SL: sd[f"ch_{s}"] = str(row[s])
                 sd.last_loaded_nm = sd.target_nm
-            
             st.text_input("시설 이름", key="in_v_nm")
             st.text_input("지역 명칭", key="in_reg_direct")
             st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
             st.text_area("주소 수정", key="in_v_addr")    
-                
             c_la, c_lo = st.columns(2)
             c_la.number_input("위도(Dec)", format="%.6f", key="in_t_la")
             c_lo.number_input("경도(Dec)", format="%.6f", key="in_t_lo")
@@ -279,17 +253,15 @@ with st.sidebar:
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider()
         st.info("📺 물리 채널 설정")
-        
         st.markdown("**📡 DTV 채널**")
         d_cols = st.columns(3)
         for i, s in enumerate(SL_DTV): d_cols[i%3].text_input(s, key=f"ch_{s}")
-        
         st.markdown("**✨ UHD 채널**")
         u_cols = st.columns(3)
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
 # ---------------------------------------------------------
-# 본문: 지도 및 데이터 현황
+# 본문: 지도
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 
@@ -307,34 +279,17 @@ with map_container:
     </style>
     <div class="map-crosshair"></div>
     """
-    
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles='https://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}', attr='G')
     m.get_root().html.add_child(folium.Element(css_injection))
-
     for _, r in disp_df.iterrows():
         is_editing_this = (sd.m_mode == "정보 수정" and sd.target_nm == r['이름'])
-        lat = float(sd.in_t_la) if (is_editing_this and sd.in_t_la) else float(r['위도'])
-        lon = float(sd.in_t_lo) if (is_editing_this and sd.in_t_lo) else float(r['경도'])
-            
+        lat, lon = (float(sd.in_t_la), float(sd.in_t_lo)) if (is_editing_this and sd.in_t_la) else (float(r['위도']), float(r['경도']))
         p, color = [lat, lon], ('red' if r['구분'] == '송신소' else 'blue')
         dt_pop, uh_pop = "|".join([f"{s}:{r[s]}" for s in SL_DTV]), "|".join([f"{s}:{r[s]}" for s in SL_UHD])
-        
-        p_html = f"""
-        <div style='font-family: sans-serif; padding-top: 5px;'>
-            <div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div>
-            <div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div>
-            <div style='font-size:17px; margin-bottom:8px; line-height:1.4;'><b>📡 DTV:</b><br>{dt_pop}</div>
-            <div style='font-size:17px; line-height:1.4;'><b>✨ UHD:</b><br>{uh_pop}</div>
-        </div>
-        """
-        
+        p_html = f"<div style='font-family: sans-serif; padding-top: 5px;'><div style='font-size:20px; font-weight:bold; color:#333; margin-bottom:6px;'>[{r['구분']}] {r['이름']}</div><div style='color:#666; font-size:15px; margin-bottom:12px;'>{r['주소']}</div><div style='font-size:17px; margin-bottom:8px; line-height:1.4;'><b>📡 DTV:</b><br>{dt_pop}</div><div style='font-size:17px; line-height:1.4;'><b>✨ UHD:</b><br>{uh_pop}</div></div>"
         folium.Marker(p, icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:4px 10px;background:white;border:2px solid {color};border-radius:6px;color:{color};font-size:10pt;font-weight:bold;white-space:nowrap;transform:translate(15px,-35px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker(p, icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, min_width=500, max_width=500)).add_to(m)
-
-    if sd.m_mode == "신규 등록" and sd.in_t_la is not None:
-        folium.Marker([sd.in_t_la, sd.in_t_lo], icon=folium.Icon(color='green', icon='star', prefix='fa')).add_to(m)
-
-    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v400_{sd.map_key}", returned_objects=["center"])
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_v410_{sd.map_key}", returned_objects=["center"])
 
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
