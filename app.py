@@ -61,8 +61,11 @@ st.markdown("""
     
     .leaflet-popup-content { font-size: 14px !important; width: 250px !important; line-height: 1.6; }
     [data-testid="stDataFrame"] td { text-align: center !important; }
-    </style>
-    """, unsafe_allow_html=True)
+
+    /* [추가] 사이드바 버튼 사이의 간격을 강제로 줄임 */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+        gap: 5px !important; /* 이 숫자를 0px에 가깝게 줄일수록 버튼이 서로 붙습니다 */
+    }
 
 # ---------------------------------------------------------
 # [2] 사이드바: v122 UI 개선 레이아웃
