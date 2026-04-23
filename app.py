@@ -64,7 +64,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 사이드바
+# 사이드바: 관제 도구 및 폼
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 및 관리")
@@ -76,7 +76,7 @@ with st.sidebar:
     st.subheader("🔍 위치 제어")
     search_addr = st.text_input("주소/건물명 검색", key="addr_input")
     c_loc = st.columns([1, 1, 1], gap="small")
-    geolocator = Nominatim(user_agent="broadcasting_v335")
+    geolocator = Nominatim(user_agent="broadcasting_v350")
 
     with c_loc[0]:
         if st.button("📍검색"):
@@ -87,7 +87,7 @@ with st.sidebar:
                         sd.base_center = [loc.latitude, loc.longitude]
                         sd.base_zoom = 16
                         sd.t_la, sd.t_lo, sd.v_addr = loc.latitude, loc.longitude, loc.address
-                        sd.m_mode, sd.map_key = "신규 등록", sd.map_key + 1; st.rerun()
+                        sd.map_key += 1; st.rerun()
                 except: st.error("오류")
     with c_loc[1]:
         if st.button("🎯위치"):
@@ -101,21 +101,26 @@ with st.sidebar:
                     rev = geolocator.reverse(f"{p[0]}, {p[1]}")
                     if rev: sd.v_addr = rev.address
                 except: pass
-                sd.m_mode, sd.map_key = "신규 등록", sd.map_key + 1; st.rerun()
+                sd.map_key += 1; st.rerun()
     with c_loc[2]:
         if st.button("↩️복구"):
             if sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
     
-    if st.button("🎯 지도 중앙을 등록 위치로 지정", type="primary"):
+    # [핵심 1] 작업 모드에 따라 텍스트가 변하는 지능형 타겟팅 버튼
+    btn_label = "🎯 지도 중앙을 수정 위치로 지정" if sd.m_mode == "정보 수정" else "🎯 지도 중앙을 신규 위치로 지정"
+    if st.button(btn_label, type="primary"):
         target_loc = sd.crosshair_center if sd.crosshair_center else sd.base_center
         sd.t_la, sd.t_lo = target_loc[0], target_loc[1]
         try:
             rev = geolocator.reverse(f"{sd.t_la}, {sd.t_lo}")
             if rev: sd.v_addr = rev.address
         except: pass
-        sd.m_mode = "신규 등록"; st.rerun()
+        st.rerun()
+
+    # [핵심 2] 맨 아래에 있던 데이터 저장 버튼이 들어갈 예약석(Placeholder) 마련
+    save_btn_placeholder = st.empty()
 
     st.divider()
     st.subheader("📋 정보 원클릭 복사")
@@ -138,6 +143,9 @@ with st.sidebar:
             for s in SL: sd[f"ch_{s}"] = ""
         else:
             sd.t_la, sd.t_lo = None, None
+
+    # 입력 폼 변수 초기화
+    v_nm, final_reg, v_cat = "", "", "중계소"
 
     if sd.m_mode == "신규 등록":
         st.subheader("🆕 신규 시설 등록")
@@ -171,17 +179,20 @@ with st.sidebar:
             tgt_idx = names.index(sd.target_nm) if sd.target_nm in names else 0
             sd.target_nm = st.selectbox("대상 선택", names, index=tgt_idx)
             row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
-            v_nm, final_reg = st.text_input("시설 이름", value=row['이름']), st.text_input("지역 명칭", value=row['지역'])
+            
+            v_nm = st.text_input("시설 이름", value=row['이름'])
+            final_reg = st.text_input("지역 명칭", value=row['지역'])
             v_cat = st.radio("구분", ["송신소", "중계소"], index=0 if row['구분']=="송신소" else 1, horizontal=True)
-            sd.v_addr = st.text_area("주소 수정", value=str(row['주소']))
             
             if sd.last_loaded_nm != sd.target_nm:
                 sd.t_la, sd.t_lo = float(row['위도']), float(row['경도'])
+                sd.v_addr = str(row['주소'])
                 for s in SL: sd[f"ch_{s}"] = str(row[s])
                 sd.last_loaded_nm = sd.target_nm
+            
+            sd.v_addr = st.text_area("주소 수정", value=sd.v_addr)    
                 
             c_la, c_lo = st.columns(2)
-            # [버그 수정] 저장 직후 sd.t_la가 None이 되더라도 안전하게 DB 값으로 대체(안전망 추가)
             safe_la = float(sd.t_la) if sd.t_la is not None else float(row['위도'])
             safe_lo = float(sd.t_lo) if sd.t_lo is not None else float(row['경도'])
             
@@ -201,6 +212,7 @@ with st.sidebar:
                 st.success(f"[{del_target}] 시설이 삭제되었습니다.")
                 st.rerun()
 
+    # 채널 입력 및 상단 저장 버튼 연결
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider()
         st.info("📺 물리 채널 설정")
@@ -209,22 +221,22 @@ with st.sidebar:
         u_cols = st.columns(3); st.markdown("**✨ UHD**")
         for i, s in enumerate(SL_UHD): u_cols[i%3].text_input(s, key=f"ch_{s}")
 
-        if st.button("✅ 데이터 저장"):
-            if v_nm and final_reg:
-                sd.history.append(sd.df.copy())
-                v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(cur_la), str(cur_lo), sd.v_addr]
-                if sd.m_mode == "정보 수정": sd.df.loc[sd.df['이름'] == sd.target_nm] = v
-                else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-                sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
-                sd.t_la, sd.t_lo, sd.v_addr = None, None, ""
-                
-                # [버그 수정 핵심] 저장 후 정보를 다시 정상적으로 불러오도록 타겟 명칭 초기화
-                sd.last_loaded_nm = None 
-                
-                st.success("저장 완료!"); st.rerun()
+        # [핵심 3] 예약석에 데이터 저장 버튼 밀어넣기
+        with save_btn_placeholder:
+            save_text = "✅ 신규 데이터 저장" if sd.m_mode == "신규 등록" else "✅ 수정된 데이터 저장"
+            if st.button(save_text, type="secondary"):
+                if v_nm and final_reg:
+                    sd.history.append(sd.df.copy())
+                    v = [final_reg, v_cat, v_nm] + [sd[f"ch_{s}"] for s in SL] + [str(cur_la), str(cur_lo), sd.v_addr]
+                    if sd.m_mode == "정보 수정": sd.df.loc[sd.df['이름'] == sd.target_nm] = v
+                    else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+                    sd.df.to_csv(DB, index=False, encoding='utf-8-sig')
+                    sd.t_la, sd.t_lo, sd.v_addr = None, None, ""
+                    sd.last_loaded_nm = None 
+                    st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
-# 본문: 지도
+# 본문: 지도 및 데이터 현황
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 인프라 관제 마스터")
 
@@ -276,7 +288,7 @@ with map_container:
         m, 
         use_container_width=True, 
         height=900, 
-        key=f"map_v335_{sd.map_key}",
+        key=f"map_v350_{sd.map_key}",
         returned_objects=["center"] 
     )
 
