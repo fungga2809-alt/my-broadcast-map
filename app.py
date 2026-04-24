@@ -9,7 +9,7 @@ import re
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정 및 초기화
-st.set_page_config(page_title="Broadcasting Master v810", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v820", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -68,7 +68,7 @@ SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 110000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 120000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'last_clicked_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "중계소",
@@ -127,7 +127,7 @@ with st.sidebar:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [lat, lon], lat, lon, [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v810").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v820").geocode(s_addr)
                     if loc: sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [loc.latitude, loc.longitude], loc.latitude, loc.longitude, [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("실패")
@@ -135,7 +135,7 @@ with st.sidebar:
         if st.button("↩️ 복구") and sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
     if st.button("🧭 내 위치 (기준점)"):
         gps = get_geolocation()
-        if gps: p = [gps['coords']['latitude'], gps['coords']['longitude']]; sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = p, p[0], p[1], p; sd.map_key += 1; st.rerun()
+        if gps: p = [gps['coords']['latitude'], gps['coords']['longitude']]; sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = p, p[0], p[1]; sd.map_key += 1; st.rerun()
     
     st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language=None)
 
@@ -143,7 +143,7 @@ with st.sidebar:
     st.header("⚙️ 관제 관리")
     regs = sorted(sd.df['지역'].unique().tolist())
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
-    sd.ch_search = st.text_input("🔎 주파수 역검색", value=sd.ch_search)
+    sd.ch_search = st.text_input("🔎 주파 역검색", value=sd.ch_search)
 
     st.divider()
     st.header("🎯 위치 지정")
@@ -231,40 +231,58 @@ if sd.ref_loc:
     disp_df = disp_df.sort_values('거리(km)')
 
 with st.container():
-    crosshair_macro = MacroElement()
-    crosshair_macro._template = Template("""
+    # 🔥 [핵심 추가] 팝업 열림/닫힘에 반응하는 스마트 커버리지 JS 매크로
+    coverage_macro = MacroElement()
+    coverage_macro._template = Template("""
         {% macro html(this, kwargs) %}
         <style>
-        .map-crosshair {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%;
-            z-index: 1000; pointer-events: none;
-        }
+        .map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }
         .map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }
         .map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }
         .map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }
         .leaflet-popup-content-wrapper { min-width: 380px !important; }
         </style>
         <div class="map-crosshair"></div>
+        <script>
+        var covCheck = setInterval(function() {
+            var mapInst = null;
+            for (var key in window) { if (key.startsWith('map_') && window[key] instanceof L.Map) { mapInst = window[key]; break; } }
+            if (mapInst) {
+                clearInterval(covCheck);
+                var covCircle = null;
+                mapInst.on('popupopen', function(e) {
+                    if (covCircle) { mapInst.removeLayer(covCircle); }
+                    var c = e.popup.getContent();
+                    var content = (typeof c === 'string') ? c : (c.outerHTML || "");
+                    if (content.indexOf("📡 DTV") !== -1) {
+                        var isTx = content.indexOf("[송신소]") !== -1;
+                        var rad = isTx ? 10000 : 2000;
+                        var col = isTx ? "red" : "blue";
+                        covCircle = L.circle(e.popup.getLatLng(), { radius: rad, color: col, fillColor: col, fillOpacity: 0.15, weight: 2, interactive: false }).addTo(mapInst);
+                        covCircle.bringToBack();
+                    }
+                });
+                mapInst.on('popupclose', function(e) {
+                    if (covCircle) { mapInst.removeLayer(covCircle); covCircle = null; }
+                });
+            }
+        }, 500);
+        </script>
         {% endmacro %}
     """)
 
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
-    m.get_root().add_child(crosshair_macro)
+    m.get_root().add_child(coverage_macro)
 
     if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='user', prefix='fa')).add_to(m)
 
     for _, r in disp_df.iterrows():
-        is_target = (sd.target_nm == r['이름'])
-        lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_target else (safe_float(r['위도']), safe_float(r['경도']))
+        # 파이썬(서버)에서 강제로 그리던 커버리지 로직 제거 (JS가 대신 처리)
+        lat, lon = safe_float(r['위도']), safe_float(r['경도'])
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
-        
-        if is_target:
-            radius = 10000 if '송신소' in r['구분'] else 2000
-            folium.Circle(location=[lat, lon], radius=radius, color=color, fill=True, fill_opacity=0.2, weight=3).add_to(m)
 
         dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
         uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
@@ -276,7 +294,7 @@ with st.container():
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
-# 🔥 [수정] 요청하신 픽셀 단위(px) 열 넓이 완벽 적용
+# 표 넓이 및 정렬
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 
@@ -293,19 +311,13 @@ if not disp_df.empty:
     styled_df = view_df[display_cols].style.apply(style_df, axis=1)
     styled_df = styled_df.set_properties(**{'text-align': 'center'})
     
-    # 전문가님 요청 픽셀(px) 정밀 세팅
     cfg = {
-        '지역': st.column_config.TextColumn(width=80),
-        '구분': st.column_config.TextColumn(width=80),
-        '이름': st.column_config.TextColumn(width=100),
-        '구글어스 좌표': st.column_config.TextColumn(width=250),
+        '지역': st.column_config.TextColumn(width=80), '구분': st.column_config.TextColumn(width=80),
+        '이름': st.column_config.TextColumn(width=100), '구글어스 좌표': st.column_config.TextColumn(width=250),
         '주소': st.column_config.TextColumn(width=350),
     }
-    # DTV 채널은 기존 가독성 유지 (50px)
     for s in SL_DTV: cfg[s] = st.column_config.TextColumn(width=50)
-    # UHD 채널은 70px로 확장
     for s in SL_UHD: cfg[s] = st.column_config.TextColumn(width=70)
-    
     if sd.ref_loc:
         cfg['거리(km)'] = st.column_config.NumberColumn(width=60)
         cfg['방향'] = st.column_config.TextColumn(width=60)
