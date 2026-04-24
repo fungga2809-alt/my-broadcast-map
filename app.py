@@ -9,7 +9,7 @@ import re
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정 및 초기화
-st.set_page_config(page_title="Broadcasting Master v820", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v830", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -68,38 +68,45 @@ SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 120000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 130000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'last_clicked_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "중계소",
-    'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': ""
+    'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': []
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 클릭 시 데이터 로드
-if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
-    idx = sd.main_table["selection"]["rows"][0]
-    temp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-    if sd.ch_search:
-        mask = temp_df[SL].apply(lambda x: x.str.contains(sd.ch_search, na=False, case=False)).any(axis=1)
-        temp_df = temp_df[mask]
-    if sd.ref_loc:
-        temp_df['거리(km)'] = temp_df.apply(lambda r: get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(r['위도']), safe_float(r['경도']))[0], axis=1)
-        temp_df = temp_df.sort_values('거리(km)')
+# 🔥 [핵심 개선] 표 체크 '선택' 및 '해제' 감지 로직
+if 'main_table' in sd:
+    curr_sel = sd.main_table.get("selection", {}).get("rows", [])
+    if curr_sel != sd.prev_sel:
+        sd.prev_sel = curr_sel
+        if curr_sel: # 체크박스 선택 시
+            idx = curr_sel[0]
+            temp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
+            if sd.ch_search:
+                mask = temp_df[SL].apply(lambda x: x.str.contains(sd.ch_search, na=False, case=False)).any(axis=1)
+                temp_df = temp_df[mask]
+            if sd.ref_loc:
+                temp_df['거리(km)'] = temp_df.apply(lambda r: get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(r['위도']), safe_float(r['경도']))[0], axis=1)
+                temp_df = temp_df.sort_values('거리(km)')
 
-    if idx < len(temp_df):
-        sel = temp_df.iloc[idx]
-        if sd.last_clicked_nm != sel['이름']:
-            sd.last_clicked_nm, sd.target_nm, sd.m_mode = sel['이름'], sel['이름'], "정보 수정"
-            sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
-            for s in SL: sd[f"ch_{s}"] = str(sel[s])
-            sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
-            sd.base_center = [sd.in_t_la, sd.in_t_lo]
-            sd.map_key += 1
-            st.rerun()
+            if idx < len(temp_df):
+                sel = temp_df.iloc[idx]
+                sd.target_nm = sel['이름']
+                sd.m_mode = "정보 수정"
+                sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
+                for s in SL: sd[f"ch_{s}"] = str(sel[s])
+                sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
+                sd.base_center = [sd.in_t_la, sd.in_t_lo]
+        else: # 🔥 체크박스 해제 시 (초기화)
+            sd.target_nm = None
+            sd.m_mode = "신규 등록"
+        sd.map_key += 1
+        st.rerun()
 
 # CSS 스타일
 st.markdown("""<style>
@@ -127,7 +134,7 @@ with st.sidebar:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [lat, lon], lat, lon, [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v820").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v830").geocode(s_addr)
                     if loc: sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [loc.latitude, loc.longitude], loc.latitude, loc.longitude, [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("실패")
@@ -135,7 +142,7 @@ with st.sidebar:
         if st.button("↩️ 복구") and sd.history: sd.df = sd.history.pop(); sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
     if st.button("🧭 내 위치 (기준점)"):
         gps = get_geolocation()
-        if gps: p = [gps['coords']['latitude'], gps['coords']['longitude']]; sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = p, p[0], p[1]; sd.map_key += 1; st.rerun()
+        if gps: p = [gps['coords']['latitude'], gps['coords']['longitude']]; sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = p, p[0], p[1], p; sd.map_key += 1; st.rerun()
     
     st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language=None)
 
@@ -143,7 +150,7 @@ with st.sidebar:
     st.header("⚙️ 관제 관리")
     regs = sorted(sd.df['지역'].unique().tolist())
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
-    sd.ch_search = st.text_input("🔎 주파 역검색", value=sd.ch_search)
+    sd.ch_search = st.text_input("🔎 주파수 역검색", value=sd.ch_search)
 
     st.divider()
     st.header("🎯 위치 지정")
@@ -231,58 +238,41 @@ if sd.ref_loc:
     disp_df = disp_df.sort_values('거리(km)')
 
 with st.container():
-    # 🔥 [핵심 추가] 팝업 열림/닫힘에 반응하는 스마트 커버리지 JS 매크로
-    coverage_macro = MacroElement()
-    coverage_macro._template = Template("""
+    crosshair_macro = MacroElement()
+    crosshair_macro._template = Template("""
         {% macro html(this, kwargs) %}
         <style>
-        .map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }
+        .map-crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%;
+            z-index: 1000; pointer-events: none;
+        }
         .map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }
         .map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }
         .map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }
         .leaflet-popup-content-wrapper { min-width: 380px !important; }
         </style>
         <div class="map-crosshair"></div>
-        <script>
-        var covCheck = setInterval(function() {
-            var mapInst = null;
-            for (var key in window) { if (key.startsWith('map_') && window[key] instanceof L.Map) { mapInst = window[key]; break; } }
-            if (mapInst) {
-                clearInterval(covCheck);
-                var covCircle = null;
-                mapInst.on('popupopen', function(e) {
-                    if (covCircle) { mapInst.removeLayer(covCircle); }
-                    var c = e.popup.getContent();
-                    var content = (typeof c === 'string') ? c : (c.outerHTML || "");
-                    if (content.indexOf("📡 DTV") !== -1) {
-                        var isTx = content.indexOf("[송신소]") !== -1;
-                        var rad = isTx ? 10000 : 2000;
-                        var col = isTx ? "red" : "blue";
-                        covCircle = L.circle(e.popup.getLatLng(), { radius: rad, color: col, fillColor: col, fillOpacity: 0.15, weight: 2, interactive: false }).addTo(mapInst);
-                        covCircle.bringToBack();
-                    }
-                });
-                mapInst.on('popupclose', function(e) {
-                    if (covCircle) { mapInst.removeLayer(covCircle); covCircle = null; }
-                });
-            }
-        }, 500);
-        </script>
         {% endmacro %}
     """)
 
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
-    m.get_root().add_child(coverage_macro)
+    m.get_root().add_child(crosshair_macro)
 
     if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='user', prefix='fa')).add_to(m)
 
     for _, r in disp_df.iterrows():
-        # 파이썬(서버)에서 강제로 그리던 커버리지 로직 제거 (JS가 대신 처리)
-        lat, lon = safe_float(r['위도']), safe_float(r['경도'])
+        is_target = (sd.target_nm == r['이름'])
+        lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_target else (safe_float(r['위도']), safe_float(r['경도']))
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
+        
+        # 🔥 [핵심] 체크박스 선택 시에만 원을 그림
+        if is_target:
+            radius = 10000 if '송신소' in r['구분'] else 2000
+            folium.Circle(location=[lat, lon], radius=radius, color=color, fill=True, fill_opacity=0.2, weight=3).add_to(m)
 
         dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
         uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
