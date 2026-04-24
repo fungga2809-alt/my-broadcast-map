@@ -9,11 +9,11 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v971", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v972", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
-# [도구함: 좌표 변환 및 거리 계산]
+# [도구함]
 def safe_float(val, default=0.0):
     try: return float(val) if val and str(val).strip() != "" else default
     except: return default
@@ -71,7 +71,7 @@ def save_db(df):
 # 세션 상태 초기화
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 500000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 600000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
     'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': []
@@ -108,7 +108,6 @@ st.markdown("""<style>
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
-    /* 지도와 표 간격 조절 */
     iframe { margin-bottom: -30px !important; }
 </style>""", unsafe_allow_html=True)
 
@@ -120,8 +119,22 @@ with st.sidebar:
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], index=["일반", "위성", "위성+이름"].index(sd.map_layer), horizontal=True)
     
     st.divider()
+    # 🗺️ 지역 필터
     regs = sorted(sd.df['지역'].unique().tolist())
-    sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
+    sd.sel_reg = st.selectbox("🗺️ 지역 필터 (대상 선택)", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
+    
+    # 🔥 [복구 완료] 지역명 일괄 변경 기능
+    if sd.sel_reg != "전체":
+        st.subheader("🚩 지역명 일괄 변경")
+        new_reg_name = st.text_input(f"'{sd.sel_reg}' 지역의 새 이름", placeholder="바꿀 이름을 입력하세요")
+        if st.button(f"'{sd.sel_reg}' → '{new_reg_name}' 일괄 변경"):
+            if new_reg_name:
+                sd.history.append(sd.df.copy())
+                sd.df.loc[sd.df['지역'] == sd.sel_reg, '지역'] = new_reg_name
+                save_db(sd.df)
+                sd.sel_reg = new_reg_name # 필터를 바뀐 이름으로 자동 변경
+                st.rerun()
+
     sd.ch_search = st.text_input("🔎 주파수 역검색", value=sd.ch_search)
 
     st.divider()
@@ -137,9 +150,7 @@ with st.sidebar:
     
     if st.button("✅ 데이터 저장"):
         f_nm = sd.get('in_v_nm', "")
-        # 🔥 지역명 결정 로직 개선 (수정 모드 시 직접입력 칸 우선 사용)
         f_reg = sd.get('in_reg_direct', "") if (sd.m_mode == "정보 수정" or sd.get('in_reg_box') == "+ 새 지역 추가") else sd.get('in_reg_box')
-        
         if f_nm and f_reg:
             sd.history.append(sd.df.copy())
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
@@ -155,16 +166,13 @@ with st.sidebar:
     sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
 
     st.markdown("### 📝 시설 정보 입력")
-    
-    # 🔥 [중요] 지역 이름 변경(수정) 기능 복구 로직
     if sd.m_mode == "신규 등록":
         reg_options = ["+ 새 지역 추가"] + regs
         st.selectbox("지역 선택", reg_options, key="in_reg_box")
         if sd.in_reg_box == "+ 새 지역 추가":
-            st.text_input("새 지역 명칭 입력", key="in_reg_direct", placeholder="예: 양산, 거창")
+            st.text_input("새 지역 명칭 입력", key="in_reg_direct")
     else:
-        # 수정 모드 및 삭제 모드 시에는 타이핑 가능한 text_input으로 표시하여 이름 변경 가능케 함
-        st.text_input("지역 이름 (수정 가능)", key="in_reg_direct")
+        st.text_input("지역 이름", key="in_reg_direct")
     
     st.text_input("시설 이름", key="in_v_nm")
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
@@ -187,7 +195,7 @@ with st.sidebar:
                 with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
 # ---------------------------------------------------------
-# 본문: 지도
+# 본문: 지도 (높이 1000)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -198,7 +206,6 @@ with st.container():
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     
-    # 조준경
     cross_html = MacroElement()
     cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }.map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }</style><div class="map-crosshair"></div>{% endmacro %}""")
     m.get_root().add_child(cross_html)
@@ -209,7 +216,6 @@ with st.container():
         color = 'red' if r['구분'] == '송신소' else 'blue'
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     
-    # 🔥 지도의 세로 크기는 1000을 유지하되, 하단 여백을 CSS로 조절했습니다.
     st_folium(m, width='stretch', height=1000, key=f"map_{sd.map_key}")
 
 # ---------------------------------------------------------
