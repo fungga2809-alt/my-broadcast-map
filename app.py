@@ -9,7 +9,7 @@ import re
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정 및 초기화
-st.set_page_config(page_title="Broadcasting Master v800", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v810", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -68,7 +68,7 @@ SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 99000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 110000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'last_clicked_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "중계소",
@@ -127,7 +127,7 @@ with st.sidebar:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [lat, lon], lat, lon, [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v800").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v810").geocode(s_addr)
                     if loc: sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [loc.latitude, loc.longitude], loc.latitude, loc.longitude, [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("실패")
@@ -231,7 +231,6 @@ if sd.ref_loc:
     disp_df = disp_df.sort_values('거리(km)')
 
 with st.container():
-    # 🔥 [복구] 지도 중앙 조준경 매크로 삽입 (절대 위치 고정)
     crosshair_macro = MacroElement()
     crosshair_macro._template = Template("""
         {% macro html(this, kwargs) %}
@@ -253,7 +252,7 @@ with st.container():
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
-    m.get_root().add_child(crosshair_macro) # 조준경 추가
+    m.get_root().add_child(crosshair_macro)
 
     if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='user', prefix='fa')).add_to(m)
 
@@ -273,16 +272,14 @@ with st.container():
         folium.Marker([lat, lon], icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:3px 8px;background:white;border:2px solid {color};border-radius:5px;color:{color};font-weight:bold;white-space:nowrap;transform:translate(15px,-30px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
     
-    # 지도 높이 900px 유지
     map_data = st_folium(m, use_container_width=True, height=900, key=f"map_{sd.map_key}", returned_objects=["center"])
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
-# 🔥 [수정] 표 너비 압축 및 글자 중앙 정렬 완벽 적용
+# 🔥 [수정] 요청하신 픽셀 단위(px) 열 넓이 완벽 적용
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 
-# 셀 중앙 정렬 CSS 적용
 def style_df(row): 
     bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
     fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
@@ -293,24 +290,26 @@ if not disp_df.empty:
     view_df['구글어스 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
     display_cols = ['지역', '구분', '이름'] + SL + (['거리(km)', '방향'] if sd.ref_loc else []) + ['구글어스 좌표', '주소']
     
-    # 스타일러에 텍스트 중앙 정렬 속성 강제 부여
     styled_df = view_df[display_cols].style.apply(style_df, axis=1)
     styled_df = styled_df.set_properties(**{'text-align': 'center'})
     
-    # 각 열의 넓이를 픽셀 단위로 타이트하게 지정
+    # 전문가님 요청 픽셀(px) 정밀 세팅
     cfg = {
-        '지역': st.column_config.TextColumn(width=60),
-        '구분': st.column_config.TextColumn(width=60),
+        '지역': st.column_config.TextColumn(width=80),
+        '구분': st.column_config.TextColumn(width=80),
         '이름': st.column_config.TextColumn(width=100),
-        '구글어스 좌표': st.column_config.TextColumn(width=150),
-        '주소': st.column_config.TextColumn(width=280),
+        '구글어스 좌표': st.column_config.TextColumn(width=250),
+        '주소': st.column_config.TextColumn(width=350),
     }
-    for s in SL: cfg[s] = st.column_config.TextColumn(width=50) # 채널은 최소 너비로
+    # DTV 채널은 기존 가독성 유지 (50px)
+    for s in SL_DTV: cfg[s] = st.column_config.TextColumn(width=50)
+    # UHD 채널은 70px로 확장
+    for s in SL_UHD: cfg[s] = st.column_config.TextColumn(width=70)
+    
     if sd.ref_loc:
         cfg['거리(km)'] = st.column_config.NumberColumn(width=60)
         cfg['방향'] = st.column_config.TextColumn(width=60)
 
-    # use_container_width=False 로 설정하여 표가 모니터 전체로 늘어나는 것을 방지
     st.dataframe(styled_df, use_container_width=False, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table", column_config=cfg)
 
 c_dl1, c_dl2 = st.columns(2)
