@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v910", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v920", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -54,7 +54,7 @@ def load_db(use_gsheets):
             df = conn.read(ttl=0).fillna("")
             df['이름'] = df['이름'].astype(str).str.strip()
             return df
-        except: st.error("구글 시트 로드 실패. CSV로 전환합니다.")
+        except: st.error("구글 시트 로드 실패. `.streamlit/secrets.toml` 설정을 확인하세요. 임시로 CSV를 엽니다.")
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         df['이름'] = df['이름'].str.strip()
@@ -67,7 +67,7 @@ def save_db(df, use_gsheets):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(data=df)
-            st.toast("☁️ 클라우드 동기화 완료!")
+            st.toast("☁️ 클라우드(구글 시트) 동기화 완료!")
         except Exception as e: st.error(f"저장 실패: {e}")
 
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
@@ -81,7 +81,7 @@ defaults = {
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'use_gsheets': False,
-    'ant_h': 10
+    'ant_h': 10, 'show_los': False, 'los_target': "" # 가시권 그래프 제어용 변수
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -90,7 +90,7 @@ for s in SL:
 
 if 'df' not in sd: sd.df = load_db(sd.use_gsheets)
 
-# 표 체크/해제 이벤트 감지 (커버리지 동기화)
+# 표 체크/해제 이벤트 감지
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -109,8 +109,10 @@ if 'main_table' in sd:
                 for s in SL: sd[f"ch_{s}"] = str(sel[s])
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
+                # 타겟이 바뀌면 그래프 숨김 처리 (계산 버튼을 다시 누르도록)
+                sd.show_los = False 
         else: 
-            sd.target_nm, sd.m_mode = None, "신규 등록"
+            sd.target_nm, sd.m_mode, sd.show_los = None, "신규 등록", False
         sd.map_key += 1; st.rerun()
 
 # [CSS 스타일]
@@ -135,17 +137,16 @@ with st.sidebar:
     st.divider()
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], index=["일반", "위성", "위성+이름"].index(sd.map_layer), horizontal=True)
     
-    st.header("🔍 기준점 및 안테나")
-    s_addr = st.text_input("주소/좌표 검색 (기준점)")
+    st.header("🔍 기준점 설정 (내 위치)")
+    s_addr = st.text_input("주소/좌표 검색")
     
-    # 🔥 [복구 완료] 검색과 복구 버튼 나란히 배치
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔍 검색") and s_addr:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.ref_loc = [lat, lon], [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v910").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v920").geocode(s_addr)
                     if loc: sd.base_center, sd.ref_loc = [loc.latitude, loc.longitude], [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("검색 실패")
@@ -153,17 +154,15 @@ with st.sidebar:
         if st.button("↩️ 복구"):
             if sd.history:
                 sd.df = sd.history.pop()
-                save_db(sd.df, sd.use_gsheets) # 복구된 데이터도 시트에 동기화
+                save_db(sd.df, sd.use_gsheets)
                 st.rerun()
-            else:
-                st.toast("⚠️ 되돌릴 이전 작업 내역이 없습니다.")
                 
-    if st.button("🧭 내 위치"):
+    if st.button("🧭 내 위치 (GPS)"):
         gps = get_geolocation()
         if gps: p = [gps['coords']['latitude'], gps['coords']['longitude']]; sd.base_center, sd.ref_loc = p, p; sd.map_key += 1; st.rerun()
     
-    sd.ant_h = st.slider("🏠 내 안테나 높이 (m)", 0, 100, sd.ant_h)
-    
+    st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language=None)
+
     st.divider()
     st.header("⚙️ 관제 관리")
     regs = sorted(sd.df['지역'].unique().tolist())
@@ -217,7 +216,6 @@ st.title(f"📡 {sd.sel_reg} 방송 관제 인프라")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 if sd.ch_search: disp_df = disp_df[disp_df[SL].apply(lambda x: x.str.contains(sd.ch_search)).any(axis=1)]
 
-# 거리 계산
 if sd.ref_loc:
     disp_df['거리(km)'] = disp_df.apply(lambda r: get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(r['위도']), safe_float(r['경도']))[0], axis=1)
     disp_df = disp_df.sort_values('거리(km)')
@@ -228,12 +226,11 @@ with st.container():
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     
-    # 조준경
     cross_html = MacroElement()
     cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }.map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }</style><div class="map-crosshair"></div>{% endmacro %}""")
     m.get_root().add_child(cross_html)
     
-    if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='home', prefix='fa'), popup="기준점").add_to(m)
+    if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='home', prefix='fa'), popup="기준점(내 위치)").add_to(m)
 
     for _, r in disp_df.iterrows():
         is_t = (sd.target_nm == r['이름'])
@@ -241,10 +238,8 @@ with st.container():
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
         
-        # 커버리지 원형
         if is_t: folium.Circle(location=[lat, lon], radius=(10000 if '송신소' in r['구분'] else 2000), color=color, fill=True, fill_opacity=0.15).add_to(m)
         
-        # 2단 팝업창
         dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
         uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
         p_html = f"<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'><div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>[{r['구분']}] <span style='background-color:#ffff00; padding:2px 5px;'>{r['이름']}</span></div><div style='color:#666; margin-bottom:12px; font-size:13px;'>{r['주소']}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;'>📡 DTV</div>{dtv_list}</div><div style='width:48%; border-left:1px solid #ddd; padding-left:12px;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px; color:#007bff;'>✨ UHD</div>{uhd_list}</div></div></div>"
@@ -255,25 +250,39 @@ with st.container():
     map_data = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
-# 🏔️ [가시권 시뮬레이터 그래프]
+# 🏔️ [🔥 핵심 개편] 가시권 시뮬레이터 (버튼 클릭형)
 if sd.target_nm and sd.ref_loc:
     st.divider()
-    st.subheader(f"🏔️ 가시권(LoS) 분석: {sd.target_nm} ↔ 내 위치")
-    t_row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
-    dist, _ = get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(t_row['위도']), safe_float(t_row['경도']))
+    st.subheader(f"🏔️ 가시권(LoS) 단면도 분석: {sd.target_nm} ↔ 내 위치")
     
-    x = np.linspace(0, dist, 50)
-    terrain = 100 * np.sin(np.pi * x / dist) + 50 + np.random.normal(0, 5, 50)
-    tx_h, rx_h = 500, 50 + sd.ant_h 
-    los_line = np.linspace(tx_h, rx_h, 50)
-    
-    lo_df = pd.DataFrame({"거리(km)": x, "지형(m)": terrain, "가시선(LoS)": los_line}).set_index("거리(km)")
-    st.area_chart(lo_df)
-    
-    if any(terrain > los_line): st.error(f"⚠️ 경고: 중간 지형에 의해 전파 가시권이 차단될 가능성이 높습니다. (안테나를 더 높이세요!)")
-    else: st.success(f"✅ 양호: {sd.target_nm} 송신소와 수신 안테나 사이의 가시권이 확보되었습니다.")
+    # 숫자 입력창과 계산 버튼을 나란히 배치
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        temp_ant = st.number_input("🏠 수신 안테나 높이 입력 (단위: m)", min_value=0, max_value=1000, value=sd.ant_h, step=5, help="숫자를 직접 입력하세요. (예: 50층 아파트는 150 입력)")
+    with col_b:
+        st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+        if st.button("📊 가시권 계산 실행", use_container_width=True):
+            sd.ant_h = temp_ant
+            sd.show_los = True
+            sd.los_target = sd.target_nm
 
-# 📊 데이터 현황 표 
+    # 버튼을 눌러 상태가 True일 때만 그래프 표시
+    if sd.show_los and sd.los_target == sd.target_nm:
+        t_row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
+        dist, _ = get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(t_row['위도']), safe_float(t_row['경도']))
+        
+        x = np.linspace(0, dist, 50)
+        terrain = 100 * np.sin(np.pi * x / dist) + 50 + np.random.normal(0, 5, 50)
+        tx_h, rx_h = 500, 50 + sd.ant_h 
+        los_line = np.linspace(tx_h, rx_h, 50)
+        
+        lo_df = pd.DataFrame({"거리(km)": x, "지형(m)": terrain, "가시선(LoS)": los_line}).set_index("거리(km)")
+        st.area_chart(lo_df)
+        
+        if any(terrain > los_line): st.error(f"⚠️ 경고: 중간 지형에 의해 전파 가시권이 차단될 가능성이 높습니다. (현재 설정 높이: {sd.ant_h}m)")
+        else: st.success(f"✅ 양호: {sd.target_nm} 송신소와 수신 안테나 사이의 가시권이 확보되었습니다. (현재 설정 높이: {sd.ant_h}m)")
+
+# 📊 데이터 현황 표 (26px 폰트 및 픽셀 고정 완벽 유지)
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
     def style_row(row):
