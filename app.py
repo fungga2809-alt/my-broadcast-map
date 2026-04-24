@@ -8,11 +8,12 @@ import math
 import re
 from branca.element import Template, MacroElement
 
-# 1. 페이지 설정 및 초기화
-st.set_page_config(page_title="Broadcasting Master v860", layout="wide")
+# 1. 페이지 설정
+st.set_page_config(page_title="Broadcasting Master v870", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
+# [도구 및 함수]
 def safe_float(val, default=0.0):
     try:
         if not val or str(val).strip() == "": return default
@@ -67,8 +68,9 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
+# 상태 변수 초기화
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 160000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 170000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'last_clicked_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "중계소",
@@ -79,7 +81,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 체크 감지 로직
+# 표 체크/해제 감지 및 연동 로직
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -106,7 +108,7 @@ if 'main_table' in sd:
             sd.m_mode = "신규 등록"
         sd.map_key += 1; st.rerun()
 
-# CSS 스타일 (UI 요소만 제어, 표는 Pandas Styler로 제어)
+# 클린업된 CSS (기본 UI 디자인만 제어)
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -130,7 +132,7 @@ with st.sidebar:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [lat, lon], lat, lon, [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v860").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v870").geocode(s_addr)
                     if loc: sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [loc.latitude, loc.longitude], loc.latitude, loc.longitude, [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("실패")
@@ -189,6 +191,13 @@ with st.sidebar:
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]; sd.map_key += 1; st.rerun()
             st.text_input("시설 이름 수정", key="in_v_nm"); st.text_input("지역 명칭 수정", key="in_reg_direct") 
             st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True); st.text_area("주소 수정", key="in_v_addr")
+    elif sd.m_mode == "데이터 삭제":
+        curr_names = (sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg])['이름'].tolist()
+        if curr_names:
+            del_t = st.selectbox("삭제 시설 선택", curr_names)
+            st.markdown('<span class="btn-delete-final"></span>', unsafe_allow_html=True)
+            if st.button("🚨 시설 삭제 실행"):
+                sd.history.append(sd.df.copy()); sd.df = sd.df[sd.df['이름'] != del_t]; sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); sd.target_nm = None; st.rerun()
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider(); st.header("📺 물리 채널 설정")
@@ -233,8 +242,8 @@ with st.container():
         <style>
         .map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }
         .map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }
-        .map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }
-        .map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }
+        .map-crosshair::before { top: 18px; left: -10px; width: 56px; height: 2px; }
+        .map-crosshair::after { left: 18px; top: -10px; height: 56px; width: 2px; }
         .leaflet-popup-content-wrapper { min-width: 380px !important; }
         </style>
         <div class="map-crosshair"></div>
@@ -245,6 +254,7 @@ with st.container():
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     m.get_root().add_child(crosshair_macro)
+
     if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='user', prefix='fa')).add_to(m)
 
     for _, r in disp_df.iterrows():
@@ -253,6 +263,7 @@ with st.container():
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
         
+        # 커버리지 그리기
         if is_target:
             radius = 10000 if '송신소' in r['구분'] else 2000
             folium.Circle(location=[lat, lon], radius=radius, color=color, fill=True, fill_opacity=0.2, weight=3).add_to(m)
@@ -267,30 +278,23 @@ with st.container():
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
-# 🔥 [수정] 22px(약 1.5배) 데이터 직접 주입 및 타이틀 정리
+# 표 영역 (스트림릿 캔버스 기본 폰트 적용)
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 
 def style_df(row): 
     bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
     fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
-    # 🔥 font-size를 22px로 직접 명시 (기존 약 14px 대비 1.5배)
-    return [f"background-color: {bg}; color: {fg}; font-weight: bold; font-size: 22px; text-align: center;" for _ in row]
+    # 중앙 정렬과 볼드체만 유지하여 시스템 안정성 확보
+    return [f"background-color: {bg}; color: {fg}; font-weight: bold; text-align: center;" for _ in row]
 
 if not disp_df.empty:
     view_df = disp_df.copy()
     view_df['구글어스 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
     display_cols = ['지역', '구분', '이름'] + SL + (['거리(km)', '방향'] if sd.ref_loc else []) + ['구글어스 좌표', '주소']
     
-    # 텍스트 중앙 정렬과 폰트 크기 직접 적용
-    styled_df = view_df[display_cols].style.apply(style_df, axis=1).set_properties(**{'text-align': 'center'})
+    styled_df = view_df[display_cols].style.apply(style_df, axis=1)
     
-    # 헤더(제목) 행의 글자 크기와 중앙 정렬 세팅
-    styled_df = styled_df.set_table_styles([
-        dict(selector='th', props=[('text-align', 'center'), ('font-size', '20px')])
-    ])
-    
-    # 픽셀(px) 너비 세팅
     cfg = {
         '지역': st.column_config.TextColumn(width=80),
         '구분': st.column_config.TextColumn(width=80),
