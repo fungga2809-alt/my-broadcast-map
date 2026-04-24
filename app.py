@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v920", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v930", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -24,6 +24,19 @@ except:
 def safe_float(val, default=0.0):
     try: return float(val) if val and str(val).strip() != "" else default
     except: return default
+
+# 🔥 [에러 픽스] 실수로 누락했던 구글어스 좌표 변환 함수 완벽 복구
+def get_google_format(lat, lon):
+    try:
+        if not lat or not lon: return ""
+        def to_dms(deg, is_lat):
+            d = int(abs(float(deg)))
+            m = int((abs(float(deg)) - d) * 60)
+            s = round((abs(float(deg)) - d - m/60) * 3600, 2)
+            suffix = (("N" if float(deg) >= 0 else "S") if is_lat else ("E" if float(deg) >= 0 else "W"))
+            return f"{d}°{m}'{s}\"{suffix}"
+        return f"{to_dms(lat, True)} {to_dms(lon, False)}"
+    except: return ""
 
 def get_dist_bearing(lat1, lon1, lat2, lon2):
     if lat1 == 0.0 or lat2 == 0.0: return 9999, ""
@@ -77,11 +90,11 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 # 세션 상태 초기화
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 230000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 250000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'use_gsheets': False,
-    'ant_h': 10, 'show_los': False, 'los_target': "" # 가시권 그래프 제어용 변수
+    'ant_h': 10, 'show_los': False, 'los_target': "" 
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -109,7 +122,6 @@ if 'main_table' in sd:
                 for s in SL: sd[f"ch_{s}"] = str(sel[s])
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
-                # 타겟이 바뀌면 그래프 숨김 처리 (계산 버튼을 다시 누르도록)
                 sd.show_los = False 
         else: 
             sd.target_nm, sd.m_mode, sd.show_los = None, "신규 등록", False
@@ -146,7 +158,7 @@ with st.sidebar:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.ref_loc = [lat, lon], [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v920").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v930").geocode(s_addr)
                     if loc: sd.base_center, sd.ref_loc = [loc.latitude, loc.longitude], [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("검색 실패")
@@ -250,12 +262,11 @@ with st.container():
     map_data = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
-# 🏔️ [🔥 핵심 개편] 가시권 시뮬레이터 (버튼 클릭형)
+# 🏔️ 가시권 시뮬레이터 (버튼 클릭형)
 if sd.target_nm and sd.ref_loc:
     st.divider()
     st.subheader(f"🏔️ 가시권(LoS) 단면도 분석: {sd.target_nm} ↔ 내 위치")
     
-    # 숫자 입력창과 계산 버튼을 나란히 배치
     col_a, col_b = st.columns([3, 1])
     with col_a:
         temp_ant = st.number_input("🏠 수신 안테나 높이 입력 (단위: m)", min_value=0, max_value=1000, value=sd.ant_h, step=5, help="숫자를 직접 입력하세요. (예: 50층 아파트는 150 입력)")
@@ -266,7 +277,6 @@ if sd.target_nm and sd.ref_loc:
             sd.show_los = True
             sd.los_target = sd.target_nm
 
-    # 버튼을 눌러 상태가 True일 때만 그래프 표시
     if sd.show_los and sd.los_target == sd.target_nm:
         t_row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
         dist, _ = get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(t_row['위도']), safe_float(t_row['경도']))
@@ -282,7 +292,7 @@ if sd.target_nm and sd.ref_loc:
         if any(terrain > los_line): st.error(f"⚠️ 경고: 중간 지형에 의해 전파 가시권이 차단될 가능성이 높습니다. (현재 설정 높이: {sd.ant_h}m)")
         else: st.success(f"✅ 양호: {sd.target_nm} 송신소와 수신 안테나 사이의 가시권이 확보되었습니다. (현재 설정 높이: {sd.ant_h}m)")
 
-# 📊 데이터 현황 표 (26px 폰트 및 픽셀 고정 완벽 유지)
+# 📊 데이터 현황 표 (글자 크기 1.5배 및 구글 좌표 포함)
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
     def style_row(row):
@@ -291,13 +301,17 @@ if not disp_df.empty:
         return [f"background-color: {bg}; color: {fg}; text-align: center; font-weight: bold; font-size: 26px; vertical-align: middle;" for _ in row]
     
     view_df = disp_df.copy()
-    display_cols = ['지역', '구분', '이름'] + SL + (['거리(km)'] if sd.ref_loc else []) + ['주소']
+    # 🔥 [복구 완료] 구글어스 좌표 다시 데이터프레임에 주입
+    view_df['구글어스 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
+    
+    display_cols = ['지역', '구분', '이름'] + SL + (['거리(km)'] if sd.ref_loc else []) + ['구글어스 좌표', '주소']
     styled_df = view_df[display_cols].style.apply(style_row, axis=1).set_properties(**{'text-align': 'center'})
     styled_df = styled_df.set_table_styles([dict(selector='th', props=[('text-align', 'center'), ('font-size', '20px')])])
     
     cfg = {
         '지역': st.column_config.TextColumn(width=80), '구분': st.column_config.TextColumn(width=80),
         '이름': st.column_config.TextColumn(width=150), '주소': st.column_config.TextColumn(width=350),
+        '구글어스 좌표': st.column_config.TextColumn(width=250) # 250px 고정 적용
     }
     for s in SL_DTV: cfg[s] = st.column_config.TextColumn(width=60)
     for s in SL_UHD: cfg[s] = st.column_config.TextColumn(width=70)
