@@ -8,11 +8,10 @@ import math
 import re
 
 # 1. 페이지 설정 및 초기화
-st.set_page_config(page_title="Broadcasting Master v780", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v790", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
-# [도구함]
 def safe_float(val, default=0.0):
     try:
         if not val or str(val).strip() == "": return default
@@ -67,9 +66,8 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# 상태 초기화
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 80000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 90000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'last_clicked_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "중계소",
@@ -80,7 +78,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 🔥 [로직] 표 클릭 시 데이터 로드 및 "커버리지 표시 타겟" 지정
+# 표 클릭 이벤트
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
     idx = sd.main_table["selection"]["rows"][0]
     temp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -104,7 +102,7 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
             sd.map_key += 1
             st.rerun()
 
-# [스타일]
+# CSS 스타일
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
@@ -131,7 +129,7 @@ with st.sidebar:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [lat, lon], lat, lon, [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v780").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v790").geocode(s_addr)
                     if loc: sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [loc.latitude, loc.longitude], loc.latitude, loc.longitude, [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("실패")
@@ -167,7 +165,7 @@ with st.sidebar:
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
             if sd.m_mode == "정보 수정" and sd.target_nm: sd.df.loc[sd.df['이름'] == sd.target_nm] = v; sd.target_nm = f_nm
             else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.success("저장 완료!"); st.rerun()
 
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
@@ -226,7 +224,7 @@ if sd.ch_search:
     mask = disp_df[SL].apply(lambda x: x.str.contains(sd.ch_search, na=False, case=False)).any(axis=1)
     disp_df = disp_df[mask]
 
-# 거리 계산 및 정렬
+# 거리/방향 계산
 if sd.ref_loc:
     dists, brngs = [], []
     for _, r in disp_df.iterrows():
@@ -235,6 +233,7 @@ if sd.ref_loc:
     disp_df['거리(km)'], disp_df['방향'] = dists, brngs
     disp_df = disp_df.sort_values('거리(km)')
 
+# 🔥 [핵심 1] 지도 세로 길이 900px로 대폭 확장
 with st.container():
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
@@ -242,7 +241,6 @@ with st.container():
     if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='user', prefix='fa')).add_to(m)
 
     for _, r in disp_df.iterrows():
-        # 🔥 [수정] 타겟 지정된 시설은 어떤 모드에서든 커버리지 원 표시
         is_target = (sd.target_nm == r['이름'])
         lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_target else (safe_float(r['위도']), safe_float(r['경도']))
         if lat == 0.0: continue
@@ -258,17 +256,45 @@ with st.container():
         folium.Marker([lat, lon], icon=folium.DivIcon(html=f'<div style="display:inline-block;padding:3px 8px;background:white;border:2px solid {color};border-radius:5px;color:{color};font-weight:bold;white-space:nowrap;transform:translate(15px,-30px);">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
     
-    map_data = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center"])
+    # 높이 900px 적용
+    map_data = st_folium(m, use_container_width=True, height=900, key=f"map_{sd.map_key}", returned_objects=["center"])
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
-# 데이터 현황
+# ---------------------------------------------------------
+# 🔥 [핵심 2 & 3] 표 컬럼 넓이 압축 및 완벽 중앙 정렬
+# ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
-def style_df(row): return [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'}; text-align: center; font-weight: bold;" for _ in row]
+def style_df(row): 
+    # 데이터 셀 중앙 정렬 속성 강제 추가
+    bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
+    fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
+    return [f"background-color: {bg}; color: {fg}; text-align: center !important; font-weight: bold;" for _ in row]
+
 if not disp_df.empty:
     view_df = disp_df.copy()
     view_df['구글어스 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
     display_cols = ['지역', '구분', '이름'] + SL + (['거리(km)', '방향'] if sd.ref_loc else []) + ['구글어스 좌표', '주소']
-    st.dataframe(view_df[display_cols].style.apply(style_df, axis=1), use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+    
+    # 스타일러에 텍스트 중앙 정렬 속성과 헤더 중앙 정렬 추가
+    styled_df = view_df[display_cols].style.apply(style_df, axis=1)
+    styled_df = styled_df.set_properties(**{'text-align': 'center'})
+    styled_df = styled_df.set_table_styles([{'selector': 'th', 'props': [('text-align', 'center')]}])
+    
+    # 컬럼 넓이 커스텀 설정 (표 압축)
+    cfg = {
+        '지역': st.column_config.TextColumn(width="small"),
+        '구분': st.column_config.TextColumn(width="small"),
+        '이름': st.column_config.TextColumn(width="small"),
+        '구글어스 좌표': st.column_config.TextColumn(width="medium"),
+        '주소': st.column_config.TextColumn(width="large"),
+    }
+    for s in SL: cfg[s] = st.column_config.TextColumn(width="small")
+    if sd.ref_loc:
+        cfg['거리(km)'] = st.column_config.NumberColumn(width="small")
+        cfg['방향'] = st.column_config.TextColumn(width="small")
+
+    # st.dataframe에 column_config 적용
+    st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table", column_config=cfg)
 
 c_dl1, c_dl2 = st.columns(2)
 with c_dl1: st.download_button("📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv', use_container_width=True)
