@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v973", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v974", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -68,17 +68,14 @@ def save_db(df):
     df.to_csv(DB, index=False, encoding='utf-8-sig')
     st.toast("💾 로컬 stations.csv 저장 완료!")
 
-# ---------------------------------------------------------
-# 세션 상태 초기화 (AttributeError 방지용 핵심 코드)
-# ---------------------------------------------------------
+# [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 700000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 800000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
-    'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [],
-    'history': [] # 🔥 여기에 history를 추가하여 에러를 해결했습니다.
+    'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'history': []
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -104,7 +101,7 @@ if 'main_table' in sd:
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
-# CSS 스타일 (버튼 색상 및 지도 간격)
+# CSS 스타일 (색상 및 디자인)
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -123,21 +120,8 @@ with st.sidebar:
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], index=["일반", "위성", "위성+이름"].index(sd.map_layer), horizontal=True)
     
     st.divider()
-    # 🗺️ 지역 필터 및 일괄 변경
     regs = sorted(sd.df['지역'].unique().tolist())
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
-    
-    if sd.sel_reg != "전체":
-        st.subheader("🚩 지역명 일괄 변경")
-        new_reg_name = st.text_input(f"'{sd.sel_reg}' 지역의 새 이름", placeholder="바꿀 이름을 입력하세요")
-        if st.button(f"'{sd.sel_reg}' → '{new_reg_name}' 일괄 변경"):
-            if new_reg_name:
-                sd.history.append(sd.df.copy())
-                sd.df.loc[sd.df['지역'] == sd.sel_reg, '지역'] = new_reg_name
-                save_db(sd.df)
-                sd.sel_reg = new_reg_name
-                st.rerun()
-
     sd.ch_search = st.text_input("🔎 주파수 역검색", value=sd.ch_search)
 
     st.divider()
@@ -154,7 +138,6 @@ with st.sidebar:
     if st.button("✅ 데이터 저장"):
         f_nm = sd.get('in_v_nm', "")
         f_reg = sd.get('in_reg_direct', "") if (sd.m_mode == "정보 수정" or sd.get('in_reg_box') == "+ 새 지역 추가") else sd.get('in_reg_box')
-        
         if f_nm and f_reg:
             sd.history.append(sd.df.copy())
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
@@ -166,16 +149,31 @@ with st.sidebar:
             save_db(sd.df); st.rerun()
 
     st.divider()
+    # [작업 모드]
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
 
+    # 🔥 [전문가님 요청: 위치 이동] 지역명 일괄 변경 섹션
+    if sd.sel_reg != "전체":
+        st.subheader("🚩 지역명 일괄 변경")
+        new_reg_name = st.text_input(f"'{sd.sel_reg}' 지역의 새 이름", placeholder="바꿀 이름을 입력하세요", key="bulk_name_input")
+        if st.button(f"'{sd.sel_reg}' → '{new_reg_name}' 일괄 변경"):
+            if new_reg_name:
+                sd.history.append(sd.df.copy())
+                sd.df.loc[sd.df['지역'] == sd.sel_reg, '지역'] = new_reg_name
+                save_db(sd.df)
+                sd.sel_reg = new_reg_name
+                st.rerun()
+
+    st.divider()
+    # [시설 정보 입력]
     st.markdown("### 📝 시설 정보 입력")
     if sd.m_mode == "신규 등록":
         reg_options = ["+ 새 지역 추가"] + regs
         st.selectbox("지역 선택", reg_options, key="in_reg_box")
         if sd.in_reg_box == "+ 새 지역 추가": st.text_input("새 지역 명칭 입력", key="in_reg_direct")
     else:
-        st.text_input("지역 이름", key="in_reg_direct")
+        st.text_input("지역 이름 수정", key="in_reg_direct")
     
     st.text_input("시설 이름", key="in_v_nm")
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
