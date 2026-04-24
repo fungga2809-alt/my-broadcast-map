@@ -9,7 +9,7 @@ import re
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정 및 초기화
-st.set_page_config(page_title="Broadcasting Master v830", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v840", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -68,7 +68,7 @@ SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 130000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 140000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'last_clicked_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "중계소",
@@ -79,12 +79,12 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 🔥 [핵심 개선] 표 체크 '선택' 및 '해제' 감지 로직
+# 표 체크 선택/해제 감지
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
         sd.prev_sel = curr_sel
-        if curr_sel: # 체크박스 선택 시
+        if curr_sel:
             idx = curr_sel[0]
             temp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
             if sd.ch_search:
@@ -102,22 +102,24 @@ if 'main_table' in sd:
                 for s in SL: sd[f"ch_{s}"] = str(sel[s])
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
-        else: # 🔥 체크박스 해제 시 (초기화)
+        else:
             sd.target_nm = None
             sd.m_mode = "신규 등록"
-        sd.map_key += 1
-        st.rerun()
+        sd.map_key += 1; st.rerun()
 
-# CSS 스타일
+# CSS 스타일 (표 글자 크기 및 행 높이 강제 주입)
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
-    th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; }
+    th { text-align: center !important; background-color: #f0f2f6 !important; font-weight: bold !important; font-size: 14pt !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
     [data-testid="stSidebar"] div.stButton button { width: 100% !important; height: 50px !important; margin-bottom: 2px !important; font-size: 17px !important; background-color: #f8f9fa !important; border: 2px solid #adb5bd !important; border-radius: 10px !important; }
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
     div.element-container:has(.btn-delete-final) + div.element-container button { background-color: #d32f2f !important; color: white !important; font-weight: bold !important; }
+    /* 🔥 표 전체 글자 크기 및 행 높이 조절 */
+    [data-testid="stDataFrame"] { font-size: 13pt !important; }
+    [data-testid="stDataFrame"] td { height: 45px !important; vertical-align: middle !important; }
 </style>""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
@@ -134,7 +136,7 @@ with st.sidebar:
             try:
                 if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [lat, lon], lat, lon, [lat, lon]
                 else:
-                    loc = Nominatim(user_agent="b_v830").geocode(s_addr)
+                    loc = Nominatim(user_agent="b_v840").geocode(s_addr)
                     if loc: sd.base_center, sd.in_t_la, sd.in_t_lo, sd.ref_loc = [loc.latitude, loc.longitude], loc.latitude, loc.longitude, [loc.latitude, loc.longitude]
                 sd.map_key += 1; st.rerun()
             except: st.error("실패")
@@ -170,7 +172,7 @@ with st.sidebar:
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
             if sd.m_mode == "정보 수정" and sd.target_nm: sd.df.loc[sd.df['이름'] == sd.target_nm] = v; sd.target_nm = f_nm
             else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.success("저장 완료!"); st.rerun()
+            sd.df.to_csv(DB, index=False, encoding='utf-8-sig'); st.rerun()
 
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
@@ -242,11 +244,7 @@ with st.container():
     crosshair_macro._template = Template("""
         {% macro html(this, kwargs) %}
         <style>
-        .map-crosshair {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%;
-            z-index: 1000; pointer-events: none;
-        }
+        .map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }
         .map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }
         .map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }
         .map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }
@@ -260,7 +258,6 @@ with st.container():
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     m.get_root().add_child(crosshair_macro)
-
     if sd.ref_loc: folium.Marker(sd.ref_loc, icon=folium.Icon(color='green', icon='user', prefix='fa')).add_to(m)
 
     for _, r in disp_df.iterrows():
@@ -268,12 +265,7 @@ with st.container():
         lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_target else (safe_float(r['위도']), safe_float(r['경도']))
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
-        
-        # 🔥 [핵심] 체크박스 선택 시에만 원을 그림
-        if is_target:
-            radius = 10000 if '송신소' in r['구분'] else 2000
-            folium.Circle(location=[lat, lon], radius=radius, color=color, fill=True, fill_opacity=0.2, weight=3).add_to(m)
-
+        if is_target: folium.Circle(location=[lat, lon], radius=(10000 if '송신소' in r['구분'] else 2000), color=color, fill=True, fill_opacity=0.2, weight=3).add_to(m)
         dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
         uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
         p_html = f"<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'><div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>[{r['구분']}] <span style='background-color:#ffff00; padding:2px 5px;'>{r['이름']}</span></div><div style='color:#666; margin-bottom:12px; font-size:13px;'>{r['주소']}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;'>📡 DTV</div>{dtv_list}</div><div style='width:48%; border-left:1px solid #ddd; padding-left:12px;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px; color:#007bff;'>✨ UHD</div>{uhd_list}</div></div></div>"
@@ -284,14 +276,15 @@ with st.container():
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
-# 표 넓이 및 정렬
+# 🔥 [수정] 13pt 글꼴 및 행 높이 확장 적용 표
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 
 def style_df(row): 
     bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
     fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
-    return [f"background-color: {bg}; color: {fg}; text-align: center; font-weight: bold;" for _ in row]
+    # font-size: 13pt 와 padding 추가하여 행 높이 확보
+    return [f"background-color: {bg}; color: {fg}; text-align: center; font-weight: bold; font-size: 13pt; padding: 10px 0px;" for _ in row]
 
 if not disp_df.empty:
     view_df = disp_df.copy()
@@ -301,18 +294,20 @@ if not disp_df.empty:
     styled_df = view_df[display_cols].style.apply(style_df, axis=1)
     styled_df = styled_df.set_properties(**{'text-align': 'center'})
     
+    # 전문가님 요청 픽셀(px) 세팅
     cfg = {
-        '지역': st.column_config.TextColumn(width=80), '구분': st.column_config.TextColumn(width=80),
-        '이름': st.column_config.TextColumn(width=100), '구글어스 좌표': st.column_config.TextColumn(width=250),
+        '지역': st.column_config.TextColumn(width=80),
+        '구분': st.column_config.TextColumn(width=80),
+        '이름': st.column_config.TextColumn(width=100),
+        '구글어스 좌표': st.column_config.TextColumn(width=250),
         '주소': st.column_config.TextColumn(width=350),
     }
     for s in SL_DTV: cfg[s] = st.column_config.TextColumn(width=50)
     for s in SL_UHD: cfg[s] = st.column_config.TextColumn(width=70)
-    if sd.ref_loc:
-        cfg['거리(km)'] = st.column_config.NumberColumn(width=60)
-        cfg['방향'] = st.column_config.TextColumn(width=60)
+    if sd.ref_loc: cfg.update({'거리(km)': st.column_config.NumberColumn(width=60), '방향': st.column_config.TextColumn(width=60)})
 
-    st.dataframe(styled_df, use_container_width=False, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table", column_config=cfg)
+    # 표가 너무 작게 느껴지지 않도록 use_container_width=True 로 변경하여 전체 너비 활용
+    st.dataframe(styled_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table", column_config=cfg)
 
 c_dl1, c_dl2 = st.columns(2)
 with c_dl1: st.download_button("📥 CSV 백업", data=sd.df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), file_name='stations.csv', use_container_width=True)
