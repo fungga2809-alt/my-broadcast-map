@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v880", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v910", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -36,6 +36,15 @@ def get_dist_bearing(lat1, lon1, lat2, lon2):
     brng = (math.degrees(math.atan2(y, x)) + 360) % 360
     dirs = ["북", "북동", "동", "남동", "남", "남서", "서", "북서"]
     return round(dist, 1), f"{dirs[int((brng + 22.5) // 45 % 8)]} ({int(brng)}°)"
+
+def generate_kml(df):
+    kml_pts = ""
+    for _, r in df.iterrows():
+        lat, lon = safe_float(r['위도']), safe_float(r['경도'])
+        if lat == 0.0: continue
+        desc = f"DTV: {r['SBS']},{r['KBS2']},{r['KBS1']},{r['EBS']},{r['MBC']} | UHD: {r['SBS(U)']},{r['KBS2(U)']},{r['KBS1(U)']},{r['EBS(U)']},{r['MBC(U)']}"
+        kml_pts += f"<Placemark><name>[{r['구분']}] {r['이름']}</name><description>{desc}</description><Point><coordinates>{lon},{lat},0</coordinates></Point></Placemark>"
+    return f'<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>{kml_pts}</Document></kml>'
 
 # ☁️ 데이터 로드 및 저장 (구글 시트 연동)
 def load_db(use_gsheets):
@@ -68,11 +77,11 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 # 세션 상태 초기화
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 200000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 230000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'history': [], 
     'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'use_gsheets': False,
-    'ant_h': 10 # 기본 안테나 높이 10m
+    'ant_h': 10
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -81,7 +90,7 @@ for s in SL:
 
 if 'df' not in sd: sd.df = load_db(sd.use_gsheets)
 
-# 표 체크/해제 이벤트
+# 표 체크/해제 이벤트 감지 (커버리지 동기화)
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -100,7 +109,8 @@ if 'main_table' in sd:
                 for s in SL: sd[f"ch_{s}"] = str(sel[s])
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
-        else: sd.target_nm, sd.m_mode = None, "신규 등록"
+        else: 
+            sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
 # [CSS 스타일]
@@ -127,14 +137,27 @@ with st.sidebar:
     
     st.header("🔍 기준점 및 안테나")
     s_addr = st.text_input("주소/좌표 검색 (기준점)")
-    if st.button("🔍 검색") and s_addr:
-        try:
-            if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.ref_loc = [lat, lon], [lat, lon]
+    
+    # 🔥 [복구 완료] 검색과 복구 버튼 나란히 배치
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🔍 검색") and s_addr:
+            try:
+                if ',' in s_addr: lat, lon = map(float, s_addr.split(',')); sd.base_center, sd.ref_loc = [lat, lon], [lat, lon]
+                else:
+                    loc = Nominatim(user_agent="b_v910").geocode(s_addr)
+                    if loc: sd.base_center, sd.ref_loc = [loc.latitude, loc.longitude], [loc.latitude, loc.longitude]
+                sd.map_key += 1; st.rerun()
+            except: st.error("검색 실패")
+    with c2:
+        if st.button("↩️ 복구"):
+            if sd.history:
+                sd.df = sd.history.pop()
+                save_db(sd.df, sd.use_gsheets) # 복구된 데이터도 시트에 동기화
+                st.rerun()
             else:
-                loc = Nominatim(user_agent="b_v880").geocode(s_addr)
-                if loc: sd.base_center, sd.ref_loc = [loc.latitude, loc.longitude], [loc.latitude, loc.longitude]
-            sd.map_key += 1; st.rerun()
-        except: st.error("검색 실패")
+                st.toast("⚠️ 되돌릴 이전 작업 내역이 없습니다.")
+                
     if st.button("🧭 내 위치"):
         gps = get_geolocation()
         if gps: p = [gps['coords']['latitude'], gps['coords']['longitude']]; sd.base_center, sd.ref_loc = p, p; sd.map_key += 1; st.rerun()
@@ -194,7 +217,7 @@ st.title(f"📡 {sd.sel_reg} 방송 관제 인프라")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
 if sd.ch_search: disp_df = disp_df[disp_df[SL].apply(lambda x: x.str.contains(sd.ch_search)).any(axis=1)]
 
-# 거리 계산 및 정렬
+# 거리 계산
 if sd.ref_loc:
     disp_df['거리(km)'] = disp_df.apply(lambda r: get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(r['위도']), safe_float(r['경도']))[0], axis=1)
     disp_df = disp_df.sort_values('거리(km)')
@@ -205,7 +228,7 @@ with st.container():
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     
-    # 조준경 매크로
+    # 조준경
     cross_html = MacroElement()
     cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }.map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }</style><div class="map-crosshair"></div>{% endmacro %}""")
     m.get_root().add_child(cross_html)
@@ -217,12 +240,19 @@ with st.container():
         lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_t else (safe_float(r['위도']), safe_float(r['경도']))
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
+        
+        # 커버리지 원형
         if is_t: folium.Circle(location=[lat, lon], radius=(10000 if '송신소' in r['구분'] else 2000), color=color, fill=True, fill_opacity=0.15).add_to(m)
         
-        folium.Marker([lat, lon], icon=folium.DivIcon(html=f'<div style="color:{color};font-weight:bold;transform:translate(15px,-20px);white-space:nowrap;">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
-        folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
+        # 2단 팝업창
+        dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
+        uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
+        p_html = f"<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'><div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>[{r['구분']}] <span style='background-color:#ffff00; padding:2px 5px;'>{r['이름']}</span></div><div style='color:#666; margin-bottom:12px; font-size:13px;'>{r['주소']}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;'>📡 DTV</div>{dtv_list}</div><div style='width:48%; border-left:1px solid #ddd; padding-left:12px;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px; color:#007bff;'>✨ UHD</div>{uhd_list}</div></div></div>"
+        
+        folium.Marker([lat, lon], icon=folium.DivIcon(html=f'<div style="color:{color};font-weight:bold;transform:translate(15px,-20px);white-space:nowrap;background:rgba(255,255,255,0.7);padding:2px;border-radius:3px;">[{r["구분"]}] {r["이름"]}</div>')).add_to(m)
+        folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
     
-    map_data = st_folium(m, use_container_width=True, height=700, key=f"map_{sd.map_key}")
+    map_data = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
     if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # 🏔️ [가시권 시뮬레이터 그래프]
@@ -232,29 +262,38 @@ if sd.target_nm and sd.ref_loc:
     t_row = sd.df[sd.df['이름'] == sd.target_nm].iloc[0]
     dist, _ = get_dist_bearing(sd.ref_loc[0], sd.ref_loc[1], safe_float(t_row['위도']), safe_float(t_row['경도']))
     
-    # 가상 지형 생성 (API 연동 전 수학 모델)
     x = np.linspace(0, dist, 50)
-    # 중간에 산봉우리를 만드는 가상 함수 (sin wave + noise)
     terrain = 100 * np.sin(np.pi * x / dist) + 50 + np.random.normal(0, 5, 50)
-    tx_h, rx_h = 500, 50 + sd.ant_h # 송신소 500m 가정, 수신소 지면 50m + 안테나
+    tx_h, rx_h = 500, 50 + sd.ant_h 
     los_line = np.linspace(tx_h, rx_h, 50)
     
     lo_df = pd.DataFrame({"거리(km)": x, "지형(m)": terrain, "가시선(LoS)": los_line}).set_index("거리(km)")
     st.area_chart(lo_df)
     
-    is_blocked = any(terrain > los_line)
-    if is_blocked: st.error(f"⚠️ 경고: 중간 지형에 의해 전파 가시권이 차단될 가능성이 높습니다. (안테나를 더 높이세요!)")
+    if any(terrain > los_line): st.error(f"⚠️ 경고: 중간 지형에 의해 전파 가시권이 차단될 가능성이 높습니다. (안테나를 더 높이세요!)")
     else: st.success(f"✅ 양호: {sd.target_nm} 송신소와 수신 안테나 사이의 가시권이 확보되었습니다.")
 
-# 📊 데이터 현황 표
+# 📊 데이터 현황 표 
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
     def style_row(row):
         bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
-        return [f"background-color: {bg}; text-align: center; font-weight: bold; font-size: 26px;" for _ in row]
+        fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
+        return [f"background-color: {bg}; color: {fg}; text-align: center; font-weight: bold; font-size: 26px; vertical-align: middle;" for _ in row]
     
     view_df = disp_df.copy()
     display_cols = ['지역', '구분', '이름'] + SL + (['거리(km)'] if sd.ref_loc else []) + ['주소']
-    st.dataframe(view_df[display_cols].style.apply(style_row, axis=1), use_container_width=False, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+    styled_df = view_df[display_cols].style.apply(style_row, axis=1).set_properties(**{'text-align': 'center'})
+    styled_df = styled_df.set_table_styles([dict(selector='th', props=[('text-align', 'center'), ('font-size', '20px')])])
+    
+    cfg = {
+        '지역': st.column_config.TextColumn(width=80), '구분': st.column_config.TextColumn(width=80),
+        '이름': st.column_config.TextColumn(width=150), '주소': st.column_config.TextColumn(width=350),
+    }
+    for s in SL_DTV: cfg[s] = st.column_config.TextColumn(width=60)
+    for s in SL_UHD: cfg[s] = st.column_config.TextColumn(width=70)
+    if sd.ref_loc: cfg['거리(km)'] = st.column_config.NumberColumn(width=80)
+
+    st.dataframe(styled_df, use_container_width=False, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table", column_config=cfg)
 
 st.download_button("🌍 KML 다운로드", data=generate_kml(sd.df).encode('utf-8'), file_name='stations.kml', mime='application/vnd.google-earth.kml+xml')
