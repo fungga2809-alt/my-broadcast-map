@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v979", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v980", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -71,7 +71,7 @@ def save_db(df):
 # [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 1500,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 2000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
@@ -83,7 +83,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 선택 이벤트 (강제 이동 필요 시)
+# 표 선택 이벤트 (선택 시 지도가 해당 송신소로 이동)
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -98,9 +98,9 @@ if 'main_table' in sd:
                 sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
                 for s in SL: sd[f"ch_{s}"] = str(sel[s])
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
-                # 강제 점프 좌표 설정
+                # 선택한 시설의 위치로 지도와 조준경을 일치시킴
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
-                sd.base_zoom = 16 
+                sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
@@ -138,27 +138,35 @@ with st.sidebar:
     sd.ch_search = st.text_input("🔎 주파수 역검색", value=sd.ch_search)
 
     st.divider()
-    # 🎯 위치 추출 기능 (정밀 조율)
+    # 🎯 위치 추출 기능 (마커 흡착 완벽 적용)
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 신규 위치 추출"):
         p = sd.crosshair_center
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
+        sd.base_center = [p[0], p[1]] # 튐 방지
         try:
-            loc = Nominatim(user_agent="b_v979").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v980").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
+        sd.map_key += 1 # 지도 강제 새로고침
         st.rerun()
 
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
         p = sd.crosshair_center
+        # 1. 새 좌표 설정
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
+        # 2. 지도가 튀지 않게 현재 조준경 위치로 중심축 고정
+        sd.base_center = [p[0], p[1]] 
         try:
-            loc = Nominatim(user_agent="b_v979").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            # 3. 주소 실시간 갱신
+            loc = Nominatim(user_agent="b_v980").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
-        st.toast("🎯 마커가 조준경 위치로 이동되었습니다.")
+        # 4. 마커를 즉시 조준경으로 이동시키기 위한 맵 새로고침 신호
+        sd.map_key += 1 
+        st.toast("🎯 마커가 조준경 위치로 정확히 이동되었습니다!")
         st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
@@ -167,6 +175,7 @@ with st.sidebar:
         f_reg = sd.get('in_reg_direct', "") if (sd.m_mode == "정보 수정" or sd.get('in_reg_box') == "+ 새 지역 추가") else sd.get('in_reg_box')
         if f_nm and f_reg:
             sd.history.append(sd.df.copy())
+            # 물리 채널(ch_...)은 변경되지 않으므로 그대로 불러와서 저장됨
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
             if sd.m_mode == "정보 수정" and sd.target_nm: 
                 sd.df.loc[sd.df['이름'] == sd.target_nm] = v
@@ -191,6 +200,8 @@ with st.sidebar:
     st.text_input("시설 이름", key="in_v_nm")
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
     st.text_area("주소 확인/수정", key="in_v_addr")
+    # 🔥 전문가님이 좌표 변경을 즉각 확인할 수 있는 피드백 텍스트 추가
+    st.caption(f"📍 현재 설정된 좌표: {sd.in_t_la:.6f}, {sd.in_t_lo:.6f}")
     
     if sd.m_mode == "데이터 삭제":
         curr_names = (sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg])['이름'].tolist()
@@ -219,7 +230,6 @@ with st.container():
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
     
-    # 🔥 [핵심] 지도를 생성할 때 base_center와 base_zoom을 고정값처럼 사용
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     
     cross_html = MacroElement()
@@ -228,26 +238,26 @@ with st.container():
     
     for _, r in disp_df.iterrows():
         is_t = (sd.target_nm == r['이름'])
-        # 마커는 입력창 좌표를 따라감 (수정 중일 때만)
+        # 🔥 대상 마커는 입력창의 최신 좌표를 실시간으로 따라감
         lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_t else (safe_float(r['위도']), safe_float(r['경도']))
         if lat == 0.0: continue
         color = 'red' if r['구분'] == '송신소' else 'blue'
         
-        # 팝업 HTML (v940 디자인)
+        # 팝업 (HTML 완벽 유지)
         dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
         uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
         p_html = f"<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'><div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>[{r['구분']}] <span style='background-color:#ffff00; padding:2px 5px;'>{r['이름']}</span></div><div style='color:#666; margin-bottom:12px; font-size:13px;'>{r['주소']}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;'>📡 DTV</div>{dtv_list}</div><div style='width:48%; border-left:1px solid #ddd; padding-left:12px;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px; color:#007bff;'>✨ UHD</div>{uhd_list}</div></div></div>"
         
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
     
-    # 🔥 [해결] 지도를 움직일 때마다 base_center를 업데이트하지 않음 (리셋 방지)
+    # 맵 구동 및 조준경 좌표만 수집 (리셋 방지)
     map_data = st_folium(m, width='stretch', height=1000, key=f"map_{sd.map_key}")
-    
     if map_data and map_data.get("center"): 
-        # 조준경 좌표만 따로 보관 (위치 추출 버튼용)
         sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
-# 📊 데이터 현황 표 (26px)
+# ---------------------------------------------------------
+# 📊 데이터 현황 표 (26px, 색상 적용)
+# ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
     view_df = disp_df.copy()
