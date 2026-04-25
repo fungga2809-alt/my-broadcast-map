@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v982", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v983", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -68,10 +68,24 @@ def save_db(df):
     df.to_csv(DB, index=False, encoding='utf-8-sig')
     st.toast("💾 로컬 stations.csv 저장 완료!")
 
+# 🔥 [신규 기능] 자동 정렬 및 그룹화 엔진 (지역 -> 송/중계소 -> 이름)
+def get_filtered_sorted_df(df, sel_reg, ch_search):
+    res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
+    if ch_search:
+        res = res[res[SL].apply(lambda x: x.str.contains(ch_search)).any(axis=1)]
+    res = res.copy()
+    if not res.empty:
+        # 송신소를 중계소보다 무조건 위로 올리기 위한 내부 순서 지정
+        sort_map = {'송신소': 1, '중계소': 2, '간이중계소': 3}
+        res['구분_순서'] = res['구분'].map(sort_map).fillna(4)
+        # 1.지역(가나다) -> 2.구분(송신소 우선) -> 3.이름(가나다) 순으로 정렬
+        res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
+    return res
+
 # [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 2000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 3000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
@@ -83,15 +97,15 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 선택 이벤트
+# 표 선택 이벤트 (정렬된 데이터 기준)
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
         sd.prev_sel = curr_sel
         if curr_sel:
             idx = curr_sel[0]
-            temp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-            if sd.ch_search: temp_df = temp_df[temp_df[SL].apply(lambda x: x.str.contains(sd.ch_search)).any(axis=1)]
+            # 🔥 항상 정렬된 데이터를 기준으로 선택하도록 동기화
+            temp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
             if idx < len(temp_df):
                 sel = temp_df.iloc[idx]
                 sd.target_nm, sd.m_mode = sel['이름'], "정보 수정"
@@ -144,7 +158,7 @@ with st.sidebar:
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         sd.base_center = [p[0], p[1]]
         try:
-            loc = Nominatim(user_agent="b_v982").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v983").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1; st.rerun()
@@ -155,7 +169,7 @@ with st.sidebar:
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         sd.base_center = [p[0], p[1]] 
         try:
-            loc = Nominatim(user_agent="b_v982").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v983").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1 
@@ -214,8 +228,9 @@ with st.sidebar:
 # 본문: 지도
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
-disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
-if sd.ch_search: disp_df = disp_df[disp_df[SL].apply(lambda x: x.str.contains(sd.ch_search)).any(axis=1)]
+
+# 🔥 자동으로 정렬된 데이터를 불러옴
+disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
 with st.container():
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
@@ -261,7 +276,6 @@ if not disp_df.empty:
 
     st.divider()
     
-    # [1] 데이터 다운로드 구역
     c_d1, c_d2 = st.columns(2)
     with c_d1:
         csv = disp_df.to_csv(index=False, encoding='utf-8-sig')
@@ -271,7 +285,6 @@ if not disp_df.empty:
     
     st.divider()
     
-    # 🔥 [2] 엑셀에서 수정한 파일 즉시 덮어쓰기 (업로드 구역)
     st.markdown("#### 📤 수정한 CSV 파일 즉시 적용 (덮어쓰기)")
     st.caption("엑셀에서 수정한 `stations.csv` 파일을 아래 네모 칸에 끌어다 놓으세요.")
     
@@ -283,7 +296,7 @@ if not disp_df.empty:
             try:
                 new_df = pd.read_csv(uploaded_file, dtype=str).fillna("")
                 if '이름' in new_df.columns and '위도' in new_df.columns:
-                    sd.history.append(sd.df.copy()) # 복구할 수 있게 백업
+                    sd.history.append(sd.df.copy())
                     sd.df = new_df
                     save_db(sd.df)
                     sd.map_key += 1
