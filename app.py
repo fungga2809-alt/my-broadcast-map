@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v981", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v982", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -144,7 +144,7 @@ with st.sidebar:
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         sd.base_center = [p[0], p[1]]
         try:
-            loc = Nominatim(user_agent="b_v981").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v982").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1; st.rerun()
@@ -155,7 +155,7 @@ with st.sidebar:
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         sd.base_center = [p[0], p[1]] 
         try:
-            loc = Nominatim(user_agent="b_v981").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v982").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1 
@@ -239,12 +239,12 @@ with st.container():
         
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
     
-    map_data = st_folium(m, width='stretch', height=1000, key=f"map_{sd.map_key}")
+    map_data = st_folium(m, use_container_width=True, height=1000, key=f"map_{sd.map_key}")
     if map_data and map_data.get("center"): 
         sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
-# 📊 데이터 현황 표 (다운로드 파일명 stations.csv 고정)
+# 📊 데이터 현황 표 & 파일 업/다운로드 구역
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
@@ -257,13 +257,39 @@ if not disp_df.empty:
         return [f"background-color: {bg}; color: {fg}; font-weight: bold; font-size: 26px;" for _ in row]
 
     styled = view_df[CL + ['구글어스 좌표']].style.apply(style_row, axis=1)
-    st.dataframe(styled, width='stretch', on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+    st.dataframe(styled, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
 
     st.divider()
+    
+    # [1] 데이터 다운로드 구역
     c_d1, c_d2 = st.columns(2)
     with c_d1:
         csv = disp_df.to_csv(index=False, encoding='utf-8-sig')
-        # 🔥 [핵심 수정] 다운로드 파일 이름을 무조건 stations.csv로 고정
-        st.download_button("📥 현재 리스트 CSV 다운로드", data=csv, file_name="stations.csv", mime='text/csv', width='stretch')
+        st.download_button("📥 현재 리스트 CSV 다운로드", data=csv, file_name="stations.csv", mime='text/csv', use_container_width=True)
     with c_d2:
-        st.download_button("🌍 현재 리스트 KML 다운로드", data=generate_kml(disp_df), file_name='stations.kml', mime='application/vnd.google-earth.kml+xml', width='stretch')
+        st.download_button("🌍 현재 리스트 KML 다운로드", data=generate_kml(disp_df), file_name='stations.kml', mime='application/vnd.google-earth.kml+xml', use_container_width=True)
+    
+    st.divider()
+    
+    # 🔥 [2] 엑셀에서 수정한 파일 즉시 덮어쓰기 (업로드 구역)
+    st.markdown("#### 📤 수정한 CSV 파일 즉시 적용 (덮어쓰기)")
+    st.caption("엑셀에서 수정한 `stations.csv` 파일을 아래 네모 칸에 끌어다 놓으세요.")
+    
+    uploaded_file = st.file_uploader("", type=['csv'], label_visibility="collapsed")
+    
+    if uploaded_file is not None:
+        st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
+        if st.button("🔄 업로드한 파일로 즉시 데이터 덮어쓰기", use_container_width=True):
+            try:
+                new_df = pd.read_csv(uploaded_file, dtype=str).fillna("")
+                if '이름' in new_df.columns and '위도' in new_df.columns:
+                    sd.history.append(sd.df.copy()) # 복구할 수 있게 백업
+                    sd.df = new_df
+                    save_db(sd.df)
+                    sd.map_key += 1
+                    st.toast("✅ 데이터가 성공적으로 덮어씌워졌습니다!")
+                    st.rerun()
+                else:
+                    st.error("올바른 양식의 파일이 아닙니다. 다운로드한 양식을 그대로 유지해 주세요.")
+            except Exception as e:
+                st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
