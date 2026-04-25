@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v974", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v975", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -71,11 +71,13 @@ def save_db(df):
 # [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 800000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 900000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
-    'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'history': []
+    'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 
+    'history': [],
+    'crosshair_center': [35.1796, 129.0756] # 🔥 에러 해결을 위한 초기값 추가
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -101,7 +103,7 @@ if 'main_table' in sd:
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
-# CSS 스타일 (색상 및 디자인)
+# CSS 스타일
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -127,11 +129,11 @@ with st.sidebar:
     st.divider()
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 신규 위치 추출"):
-        sd.m_mode, sd.target_nm = "신규 등록", None; p = sd.crosshair_center if sd.crosshair_center else sd.base_center
+        sd.m_mode, sd.target_nm = "신규 등록", None; p = sd.get('crosshair_center', sd.base_center)
         sd.in_t_la, sd.in_t_lo, sd.base_center = p[0], p[1], p; st.rerun()
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
-        sd.m_mode = "정보 수정"; p = sd.crosshair_center if sd.crosshair_center else sd.base_center
+        sd.m_mode = "정보 수정"; p = sd.get('crosshair_center', sd.base_center)
         sd.in_t_la, sd.in_t_lo, sd.base_center = p[0], p[1], p; st.rerun()
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     
@@ -149,11 +151,11 @@ with st.sidebar:
             save_db(sd.df); st.rerun()
 
     st.divider()
-    # [작업 모드]
+    # 1. 작업 모드
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
 
-    # 🔥 [전문가님 요청: 위치 이동] 지역명 일괄 변경 섹션
+    # 2. 지역명 일괄 변경 (작업 모드 바로 아래 배치)
     if sd.sel_reg != "전체":
         st.subheader("🚩 지역명 일괄 변경")
         new_reg_name = st.text_input(f"'{sd.sel_reg}' 지역의 새 이름", placeholder="바꿀 이름을 입력하세요", key="bulk_name_input")
@@ -166,7 +168,7 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
-    # [시설 정보 입력]
+    # 3. 시설 정보 입력
     st.markdown("### 📝 시설 정보 입력")
     if sd.m_mode == "신규 등록":
         reg_options = ["+ 새 지역 추가"] + regs
@@ -217,7 +219,8 @@ with st.container():
         color = 'red' if r['구분'] == '송신소' else 'blue'
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     
-    st_folium(m, width='stretch', height=1000, key=f"map_{sd.map_key}")
+    map_data = st_folium(m, width='stretch', height=1000, key=f"map_{sd.map_key}")
+    if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
 # 📊 데이터 현황 표 (26px, 색상 적용)
