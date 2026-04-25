@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v983", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v984", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -29,18 +29,6 @@ def get_google_format(lat, lon):
             return f"{d}°{m}'{s}\"{suffix}"
         return f"{to_dms(lat, True)} {to_dms(lon, False)}"
     except: return ""
-
-def get_dist_bearing(lat1, lon1, lat2, lon2):
-    if lat1 == 0.0 or lat2 == 0.0: return 9999, ""
-    R = 6371
-    dLat, dLon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
-    a = math.sin(dLat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon/2)**2
-    dist = R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
-    y = math.sin(math.radians(lon2-lon1)) * math.cos(math.radians(lat2))
-    x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(math.radians(lon2-lon1))
-    brng = (math.degrees(math.atan2(y, x)) + 360) % 360
-    dirs = ["북", "북동", "동", "남동", "남", "남서", "서", "북서"]
-    return round(dist, 1), f"{dirs[int((brng + 22.5) // 45 % 8)]} ({int(brng)}°)"
 
 def generate_kml(df):
     kml_pts = ""
@@ -68,43 +56,46 @@ def save_db(df):
     df.to_csv(DB, index=False, encoding='utf-8-sig')
     st.toast("💾 로컬 stations.csv 저장 완료!")
 
-# 🔥 [신규 기능] 자동 정렬 및 그룹화 엔진 (지역 -> 송/중계소 -> 이름)
-def get_filtered_sorted_df(df, sel_reg, ch_search):
+# 🔥 [개선된 통합 검색 및 정렬 엔진]
+def get_filtered_sorted_df(df, sel_reg, search_query):
+    # 1. 지역 필터링
     res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
-    if ch_search:
-        res = res[res[SL].apply(lambda x: x.str.contains(ch_search)).any(axis=1)]
+    
+    # 2. 통합 검색 (Option 3 적용: 이름, 지역, 채널, 주소 모두 검색)
+    if search_query:
+        # 모든 컬럼을 합쳐서 검색하거나 주요 컬럼에서 검색
+        search_target = res['이름'] + " " + res['지역'] + " " + res['주소'] + " " + res[SL].apply(lambda x: ' '.join(x), axis=1)
+        res = res[search_target.str.contains(search_query, case=False, na=False)]
+    
     res = res.copy()
     if not res.empty:
-        # 송신소를 중계소보다 무조건 위로 올리기 위한 내부 순서 지정
         sort_map = {'송신소': 1, '중계소': 2, '간이중계소': 3}
         res['구분_순서'] = res['구분'].map(sort_map).fillna(4)
-        # 1.지역(가나다) -> 2.구분(송신소 우선) -> 3.이름(가나다) 순으로 정렬
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
     return res
 
 # [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 3000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 4000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
-    'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 
-    'history': [], 'crosshair_center': [35.1796, 129.0756]
+    'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'history': [],
+    'crosshair_center': [35.1796, 129.0756]
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 선택 이벤트 (정렬된 데이터 기준)
+# 표 선택 이벤트
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
         sd.prev_sel = curr_sel
         if curr_sel:
             idx = curr_sel[0]
-            # 🔥 항상 정렬된 데이터를 기준으로 선택하도록 동기화
             temp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
             if idx < len(temp_df):
                 sel = temp_df.iloc[idx]
@@ -117,7 +108,7 @@ if 'main_table' in sd:
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
-# CSS 스타일
+# CSS 스타일 (26px 폰트 및 UI 보정)
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -126,6 +117,8 @@ st.markdown("""<style>
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
     iframe { margin-bottom: -30px !important; }
+    /* 데이터프레임 폰트 강제 설정 */
+    [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { font-size: 26px !important; height: 45px !important; }
 </style>""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
@@ -139,16 +132,8 @@ with st.sidebar:
     regs = sorted(sd.df['지역'].unique().tolist())
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
     
-    if sd.sel_reg != "전체":
-        st.subheader("🚩 지역명 일괄 변경")
-        new_reg_name = st.text_input(f"'{sd.sel_reg}' 지역의 새 이름", placeholder="바꿀 이름을 입력하세요", key="bulk_name_input")
-        if st.button(f"'{sd.sel_reg}' → '{new_reg_name}' 일괄 변경"):
-            if new_reg_name:
-                sd.history.append(sd.df.copy())
-                sd.df.loc[sd.df['지역'] == sd.sel_reg, '지역'] = new_reg_name
-                save_db(sd.df); sd.sel_reg = new_reg_name; st.rerun()
-
-    sd.ch_search = st.text_input("🔎 주파수 역검색", value=sd.ch_search)
+    # 🔥 [Option 3: 통합 검색 필터]
+    sd.ch_search = st.text_input("🔎 통합 검색 (이름/시군구/채널)", value=sd.ch_search, placeholder="예: 양산, 황령산, 14, S")
 
     st.divider()
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
@@ -158,7 +143,7 @@ with st.sidebar:
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         sd.base_center = [p[0], p[1]]
         try:
-            loc = Nominatim(user_agent="b_v983").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v984").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1; st.rerun()
@@ -169,7 +154,7 @@ with st.sidebar:
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         sd.base_center = [p[0], p[1]] 
         try:
-            loc = Nominatim(user_agent="b_v983").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v984").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1 
@@ -193,6 +178,15 @@ with st.sidebar:
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
+
+    if sd.sel_reg != "전체":
+        st.subheader("🚩 지역명 일괄 변경")
+        new_reg_name = st.text_input(f"'{sd.sel_reg}' 지역의 새 이름", placeholder="바꿀 이름을 입력하세요", key="bulk_name_input")
+        if st.button(f"'{sd.sel_reg}' → '{new_reg_name}' 일괄 변경"):
+            if new_reg_name:
+                sd.history.append(sd.df.copy())
+                sd.df.loc[sd.df['지역'] == sd.sel_reg, '지역'] = new_reg_name
+                save_db(sd.df); sd.sel_reg = new_reg_name; st.rerun()
 
     st.divider()
     st.markdown("### 📝 시설 정보 입력")
@@ -228,14 +222,11 @@ with st.sidebar:
 # 본문: 지도
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
-
-# 🔥 자동으로 정렬된 데이터를 불러옴
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
 with st.container():
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
-    
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     
     cross_html = MacroElement()
@@ -259,7 +250,7 @@ with st.container():
         sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
-# 📊 데이터 현황 표 & 파일 업/다운로드 구역
+# 📊 데이터 현황 표 (26px 적용 강화)
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
@@ -269,9 +260,12 @@ if not disp_df.empty:
     def style_row(row):
         bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
         fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
-        return [f"background-color: {bg}; color: {fg}; font-weight: bold; font-size: 26px;" for _ in row]
+        # 🔥 여기서 폰트 크기를 인라인으로 한 번 더 강제합니다.
+        return [f"background-color: {bg}; color: {fg}; font-weight: bold; font-size: 26px; border-bottom: 1px solid #ccc;" for _ in row]
 
     styled = view_df[CL + ['구글어스 좌표']].style.apply(style_row, axis=1)
+    
+    # st.dataframe 내부에 스타일을 입혀 렌더링
     st.dataframe(styled, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
 
     st.divider()
@@ -286,23 +280,14 @@ if not disp_df.empty:
     st.divider()
     
     st.markdown("#### 📤 수정한 CSV 파일 즉시 적용 (덮어쓰기)")
-    st.caption("엑셀에서 수정한 `stations.csv` 파일을 아래 네모 칸에 끌어다 놓으세요.")
-    
     uploaded_file = st.file_uploader("", type=['csv'], label_visibility="collapsed")
     
     if uploaded_file is not None:
-        st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
         if st.button("🔄 업로드한 파일로 즉시 데이터 덮어쓰기", use_container_width=True):
             try:
                 new_df = pd.read_csv(uploaded_file, dtype=str).fillna("")
-                if '이름' in new_df.columns and '위도' in new_df.columns:
+                if '이름' in new_df.columns:
                     sd.history.append(sd.df.copy())
                     sd.df = new_df
-                    save_db(sd.df)
-                    sd.map_key += 1
-                    st.toast("✅ 데이터가 성공적으로 덮어씌워졌습니다!")
-                    st.rerun()
-                else:
-                    st.error("올바른 양식의 파일이 아닙니다. 다운로드한 양식을 그대로 유지해 주세요.")
-            except Exception as e:
-                st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+                    save_db(sd.df); sd.map_key += 1; st.toast("✅ 적용 완료!"); st.rerun()
+            except Exception as e: st.error(f"오류: {e}")
