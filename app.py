@@ -9,7 +9,7 @@ import numpy as np
 from branca.element import Template, MacroElement
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v975", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v976", layout="wide")
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -71,20 +71,19 @@ def save_db(df):
 # [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 900000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 1000000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
     'ref_loc': None, 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 
-    'history': [],
-    'crosshair_center': [35.1796, 129.0756] # 🔥 에러 해결을 위한 초기값 추가
+    'history': [], 'crosshair_center': [35.1796, 129.0756]
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 선택 이벤트
+# 표 선택 이벤트 (선택 시 입력창 채우기)
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -127,21 +126,37 @@ with st.sidebar:
     sd.ch_search = st.text_input("🔎 주파수 역검색", value=sd.ch_search)
 
     st.divider()
+    # 🎯 위치 추출 버튼 (개선됨)
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 신규 위치 추출"):
         sd.m_mode, sd.target_nm = "신규 등록", None; p = sd.get('crosshair_center', sd.base_center)
-        sd.in_t_la, sd.in_t_lo, sd.base_center = p[0], p[1], p; st.rerun()
+        sd.in_t_la, sd.in_t_lo, sd.base_center = p[0], p[1], p
+        try:
+            loc = Nominatim(user_agent="b_v976").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            if loc: sd.in_v_addr = loc.address
+        except: pass
+        st.rerun()
+
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
-        sd.m_mode = "정보 수정"; p = sd.get('crosshair_center', sd.base_center)
-        sd.in_t_la, sd.in_t_lo, sd.base_center = p[0], p[1], p; st.rerun()
+        # 🔥 [핵심 수정] 현재 지도 중앙 좌표와 주소를 가져와 입력창에 반영
+        p = sd.get('crosshair_center', sd.base_center)
+        sd.in_t_la, sd.in_t_lo = p[0], p[1]
+        try:
+            # 좌표로 주소 자동 검색
+            loc = Nominatim(user_agent="b_v976").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            if loc: sd.in_v_addr = loc.address
+        except: pass
+        st.toast("🎯 지도 중앙의 좌표와 주소가 입력창에 반영되었습니다.")
+        st.rerun()
+
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
-    
     if st.button("✅ 데이터 저장"):
         f_nm = sd.get('in_v_nm', "")
         f_reg = sd.get('in_reg_direct', "") if (sd.m_mode == "정보 수정" or sd.get('in_reg_box') == "+ 새 지역 추가") else sd.get('in_reg_box')
         if f_nm and f_reg:
             sd.history.append(sd.df.copy())
+            # 채널 데이터(`ch_...`)는 그대로 유지된 상태로 저장됨
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
             if sd.m_mode == "정보 수정" and sd.target_nm: 
                 sd.df.loc[sd.df['이름'] == sd.target_nm] = v
@@ -155,7 +170,7 @@ with st.sidebar:
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
 
-    # 2. 지역명 일괄 변경 (작업 모드 바로 아래 배치)
+    # 2. 지역명 일괄 변경
     if sd.sel_reg != "전체":
         st.subheader("🚩 지역명 일괄 변경")
         new_reg_name = st.text_input(f"'{sd.sel_reg}' 지역의 새 이름", placeholder="바꿀 이름을 입력하세요", key="bulk_name_input")
@@ -198,7 +213,7 @@ with st.sidebar:
                 with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
 # ---------------------------------------------------------
-# 본문: 지도 (높이 1000)
+# 본문: 지도
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg]
@@ -219,8 +234,10 @@ with st.container():
         color = 'red' if r['구분'] == '송신소' else 'blue'
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa')).add_to(m)
     
+    # 지도 출력 및 중앙 좌표 감지
     map_data = st_folium(m, width='stretch', height=1000, key=f"map_{sd.map_key}")
-    if map_data and map_data.get("center"): sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+    if map_data and map_data.get("center"): 
+        sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 # ---------------------------------------------------------
 # 📊 데이터 현황 표 (26px, 색상 적용)
