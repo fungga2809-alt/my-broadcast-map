@@ -17,7 +17,7 @@ GS_URL = st.secrets.get("gsheets_url", "")
 
 sd = st.session_state
 
-# [에러 메시지 관리] - 사라지지 않게 세션에 저장
+# [에러 메시지 관리] - 고정 노출용
 if 'error_msg' not in sd: sd.error_msg = None
 
 # [도구함]
@@ -54,15 +54,15 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 # [데이터 로드/저장]
 def load_db():
     df = pd.DataFrame(columns=CL, dtype=str)
-    sd.error_msg = None # 로드 시작 시 에러 초기화
+    sd.error_msg = None 
     
     if sd.get('gs_sync_on', False):
         if not GS_URL:
-            sd.error_msg = "⚠️ Secrets 설정에서 gsheets_url을 찾을 수 없습니다. (줄바꿈 확인)"
+            sd.error_msg = "⚠️ Secrets 설정에서 gsheets_url을 찾을 수 없습니다. (첫 줄 줄바꿈 확인)"
         else:
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
-                df = conn.read(ttl=0).astype(str).fillna("") 
+                df = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("") 
                 for s in SL:
                     df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
                 st.toast("🌐 구글 시트 로드 성공!")
@@ -146,12 +146,11 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 사이드바 (에러 메시지 고정 노출)
+# 사이드바 (에러 고정 노출)
 # ---------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 설정")
     
-    # 🚩 연동 에러가 있으면 여기에 고정 표시
     if sd.error_msg:
         st.error(sd.error_msg)
         if st.button("❌ 에러 메시지 닫기"):
@@ -239,7 +238,7 @@ with st.sidebar:
             with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
 # ---------------------------------------------------------
-# 본문: 지도 (🚩 9:16 비율 적용)
+# 본문: 지도 (🚩 16:9 와이드 비율 적용)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
@@ -248,10 +247,9 @@ l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
 tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
 
-# 🚩 9:16 비율 (세로가 더 긴 형태)
-# 일반적인 와이드 모니터에서 세로를 길게 하려면 높이를 크게 잡아야 합니다.
-# 높이를 1200~1400 정도로 설정하면 9:16에 가까운 세로형 지도가 됩니다.
-map_height = 1400 
+# 🚩 16:9 비율 (가로가 더 긴 와이드형)
+# 대부분의 데스크탑 브라우저에서 가로 너비 대비 600~700px 높이가 16:9 느낌을 줍니다.
+map_height = 680 
 
 for _, r in disp_df.iterrows():
     is_t = (sd.target_nm == r['이름'])
@@ -264,7 +262,7 @@ for _, r in disp_df.iterrows():
 st_folium(m, use_container_width=True, height=map_height, key=f"map_{sd.map_key}")
 
 # ---------------------------------------------------------
-# 📊 데이터 현황 (26px 유지)
+# 📊 데이터 현황 (26px & 컬러 유지)
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
