@@ -2,5 +2,6 @@ streamlit
 pandas
 folium
 streamlit-folium
-geopy
 streamlit-js-eval
+geopy
+st-gsheets-connection
