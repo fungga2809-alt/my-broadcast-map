@@ -10,8 +10,9 @@ from streamlit_gsheets import GSheetsConnection
 import time 
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v984", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v984.1", layout="wide")
 DB = 'stations.csv'
+# Secrets에서 주소를 읽어오되, 없으면 공백으로 처리
 GS_URL = st.secrets.get("gsheets_url", "") 
 
 sd = st.session_state
@@ -35,34 +36,29 @@ def get_google_format(lat, lon):
         return f"{to_dms(lat, True)} {to_dms(lon, False)}"
     except: return ""
 
-def generate_kml(df):
-    kml_pts = ""
-    for _, r in df.iterrows():
-        lat, lon = safe_float(r['위도']), safe_float(r['경도'])
-        if lat == 0.0: continue
-        desc = f"DTV: {r['SBS']},{r['KBS2']},{r['KBS1']},{r['EBS']},{r['MBC']} | UHD: {r['SBS(U)']},{r['KBS2(U)']},{r['KBS1(U)']},{r['EBS(U)']},{r['MBC(U)']}"
-        kml_pts += f"<Placemark><name>[{r['구분']}] {r['이름']}</name><description>{desc}</description><Point><coordinates>{lon},{lat},0</coordinates></Point></Placemark>"
-    return f'<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>{kml_pts}</Document></kml>'
-
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [데이터 로드/저장]
+# [데이터 로드/저장 로직 강화]
 def load_db():
     df = pd.DataFrame(columns=CL, dtype=str)
     sd.error_msg = None 
-    if sd.get('gs_sync_on', False) and GS_URL:
-        try:
-            conn = st.connection("gsheets", type=GSheetsConnection)
-            df = conn.read(ttl=0).astype(str).fillna("")
-            for s in SL:
-                df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
-            st.toast("🌐 구글 시트 데이터 로드 성공!")
-            return df
-        except Exception as e:
-            sd.error_msg = f"❌ 구글 시트 연결 실패: {e}"
+    if sd.get('gs_sync_on', False):
+        if not GS_URL:
+            sd.error_msg = "❌ Secrets에 gsheets_url이 설정되지 않았습니다."
+        else:
+            try:
+                # 🚩 연동 안정성을 위해 주소를 직접 명시
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                df = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("")
+                for s in SL:
+                    df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
+                st.toast("🌐 구글 시트 연동 성공!")
+                return df
+            except Exception as e:
+                sd.error_msg = f"❌ 구글 시트 로드 실패: {str(e)}"
     
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
@@ -76,12 +72,13 @@ def save_db(df):
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
-            conn.update(data=df)
-            st.cache_data.clear() # 캐시 즉시 삭제로 강력한 동기화
-            st.sidebar.success("✅ 구글 시트 저장 및 동기화 완료!")
+            # 🚩 저장 시에도 주소를 명확히 전달
+            conn.update(spreadsheet=GS_URL, data=df)
+            st.cache_data.clear() 
+            st.sidebar.success("✅ 구글 시트 저장 완료!")
             time.sleep(1)
         except Exception as e:
-            sd.error_msg = f"❌ 저장 실패: {e}"
+            sd.error_msg = f"❌ 구글 시트 저장 실패: {str(e)}"
     else:
         st.toast("💾 로컬 저장 완료!")
 
@@ -101,18 +98,17 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 if 'df' not in sd: sd.df = load_db()
 defaults = {
     'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 
-    'base_zoom': 14, 'map_key': 4000,
-    'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
-    'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
-    'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
-    'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'gs_sync_on': False
+    'base_zoom': 14, 'map_key': 4000, 'sel_reg': "전체", 'm_mode': "신규 등록", 
+    'target_nm': None, 'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 
+    'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
+    'in_v_addr': "", 'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'gs_sync_on': False
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 🚩 테이블 클릭 시에만 지도를 해당 시설로 강제 이동 (드래그 시 튕김 현상 방지)
+# 테이블 클릭 이벤트
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -124,14 +120,12 @@ if 'main_table' in sd:
                 sel = temp_df.iloc[idx]
                 sd.target_nm, sd.m_mode = sel['이름'], "정보 수정"
                 sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
-                sd.in_v_addr = str(sel['주소'])
+                sd.in_v_addr, sd.in_t_la, sd.in_t_lo = str(sel['주소']), safe_float(sel['위도']), safe_float(sel['경도'])
                 for s in SL: sd[f"ch_{s}"] = str(sel[s])
-                sd.in_t_la, sd.in_t_lo = safe_float(sel['위도']), safe_float(sel['경도'])
-                sd.base_center = [sd.in_t_la, sd.in_t_lo] # 지도 이동의 기준점 설정
+                sd.base_center = [sd.in_t_la, sd.in_t_lo]
                 sd.map_key += 1
                 st.rerun()
 
-# CSS 스타일 보존
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -146,7 +140,7 @@ with st.sidebar:
     st.header("⚙️ 관제 설정")
     if sd.error_msg:
         st.error(sd.error_msg)
-        if st.button("❌ 에러 메시지 닫기"):
+        if st.button("❌ 에러 창 닫기"):
             sd.error_msg = None; st.rerun()
 
     sync_toggle = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
@@ -177,12 +171,10 @@ with st.sidebar:
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center[0], sd.crosshair_center[1]
-            sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]] # 지도가 튕기지 않도록 기준점 고정
+            sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]] 
             sd.map_key += 1 
-            st.toast("🎯 마커가 조준경 위치로 이동되었습니다! (나머지 정보 유지)")
+            st.toast("🎯 마커 이동 완료!")
             st.rerun()
-        else:
-            st.warning("먼저 표에서 수정할 시설을 선택해 주세요.")
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 저장"):
@@ -229,7 +221,6 @@ with st.sidebar:
         for i, s in enumerate(list_ch):
             with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
-# 🚩 지도는 오직 'base_center'만을 기준으로 동작합니다. 드래그할 때 튕기지 않습니다!
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
@@ -242,32 +233,14 @@ m.get_root().add_child(cross_html)
 
 for _, r in disp_df.iterrows():
     is_t = (sd.target_nm == r['이름'])
-    if is_t:
-        lat, lon = safe_float(sd.in_t_la), safe_float(sd.in_t_lo)
-        p_cat = sd.in_v_cat
-    else:
-        lat, lon = safe_float(r['위도']), safe_float(r['경도'])
-        p_cat = r['구분']
-    
+    lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_t else (safe_float(r['위도']), safe_float(r['경도']))
     if lat == 0.0: continue
-    color = 'red' if p_cat == '송신소' else 'blue'
-    
+    color = 'red' if (sd.in_v_cat if is_t else r['구분']) == '송신소' else 'blue'
     dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {sd.get(f'ch_{s}', r[s]) if is_t else r[s]}</span></div>" for s in SL_DTV])
     uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {sd.get(f'ch_{s}', r[s]) if is_t else r[s]}</span></div>" for s in SL_UHD])
-    p_html = f"""<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'>
-        <div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>
-            [{p_cat}] <span style='background-color:#ffff00; padding:2px 5px;'>{sd.in_v_nm if is_t else r['이름']}</span>
-        </div>
-        <div style='color:#666; margin-bottom:12px; font-size:13px;'>{sd.in_v_addr if is_t else r['주소']}</div>
-        <div style='display:flex; justify-content:space-between;'>
-            <div style='width:48%;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;'>📡 DTV</div>{dtv_list}</div>
-            <div style='width:48%; border-left:1px solid #ddd; padding-left:12px;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px; color:#007bff;'>✨ UHD</div>{uhd_list}</div>
-        </div>
-    </div>"""
-    
+    p_html = f"<div style='width:350px; font-size:15px;'><div style='font-size:20px; font-weight:bold;'>[{(sd.in_v_cat if is_t else r['구분'])}] {(sd.in_v_nm if is_t else r['이름'])}</div><div>{(sd.in_v_addr if is_t else r['주소'])}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'>{dtv_list}</div><div style='width:48%; color:#007bff;'>{uhd_list}</div></div></div>"
     folium.Marker([lat, lon], icon=folium.Icon(color=color), popup=folium.Popup(p_html, max_width=400)).add_to(m)
 
-# 조준경의 현재 위치만 조용히 저장합니다.
 map_data = st_folium(m, use_container_width=True, height=680, key=f"map_{sd.map_key}")
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
