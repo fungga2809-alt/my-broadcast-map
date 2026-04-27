@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정 및 가로 꽉 참 설정
-st.set_page_config(page_title="Broadcasting Master v986", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v987", layout="wide")
 
 # [V984 오리지널 디자인 CSS]
 st.markdown("""<style>
@@ -58,7 +58,7 @@ def load_db():
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "Quota exceeded" in err_str:
-                st.warning("⚠️ 구글 서버 요청 한도 초과(1분에 60회). 1분 뒤 자동으로 해제됩니다.")
+                st.toast("⚠️ 구글 서버 요청 한도 초과(1분 뒤 해제됩니다).", icon="⏳")
             else: pass
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
@@ -66,7 +66,7 @@ def load_db():
         return df
     except: return pd.DataFrame(columns=CL, dtype=str)
 
-# 🚩 [팝업 버그 해결]: 불필요한 토스트 팝업 완전 제거, 오직 구글 저장 성공시에만 조용히 알림
+# 🚩 [팝업 로직 강화]: 로컬 및 구글 시트 저장 시 각각 명확한 팝업 제공
 def save_db(df):
     df.to_csv(DB, index=False, encoding='utf-8-sig') 
     if sd.get('gs_sync_on', False):
@@ -74,12 +74,14 @@ def save_db(df):
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(data=df) 
             st.cache_data.clear()
-            st.sidebar.success("✅ 구글 시트 동기화 완료!")
+            st.toast("☁️ 구글 시트 실시간 동기화 완료!", icon="🔄")
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "Quota exceeded" in err_str:
-                st.warning("⚠️ 과도한 트래픽으로 구글 서버 일시 차단됨. 잠시 후 다시 시도해주세요.")
+                st.toast("⚠️ 과도한 트래픽으로 구글 서버 일시 차단됨. 잠시 후 시도해주세요.", icon="⏳")
             else: st.error(f"❌ 시트 저장 실패: {e}")
+    else:
+        st.toast("💻 로컬(PC) 파일에 업데이트 완료!", icon="💾")
 
 def get_filtered_sorted_df(df, sel_reg, search_query):
     res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
@@ -98,7 +100,7 @@ if 'df' not in sd:
 
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 8000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 9000,
     'm_mode': "신규 등록", 'target_nm': None,
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소",
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': []
@@ -139,12 +141,15 @@ with st.sidebar:
         if sd.gs_sync_on: 
             st.cache_data.clear() 
             sd.df = load_db()
+            st.toast("🌐 실시간 연동 모드가 켜졌습니다.", icon="🔌")
         st.rerun()
         
     if sd.gs_sync_on:
         if st.button("🔄 시트 최신 데이터 불러오기"):
             st.cache_data.clear()
-            sd.df = load_db(); st.rerun()
+            sd.df = load_db()
+            st.toast("📥 구글 시트의 최신 데이터를 불러왔습니다!", icon="✅")
+            st.rerun()
 
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], horizontal=True)
     st.divider()
@@ -156,7 +161,6 @@ with st.sidebar:
     st.divider()
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     
-    # 🚩 [원클릭 오토 세이브]: 신규 위치 추출 즉시 데이터 업데이트
     if st.button("🎯 신규 위치 추출"):
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center
@@ -165,22 +169,23 @@ with st.sidebar:
             loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
             if loc: sd.in_v_addr = loc.address
         except: pass
-        sd.map_key += 1; st.rerun()
+        sd.map_key += 1
+        st.toast("🎯 신규 마커 위치가 추출되었습니다!", icon="📍")
+        st.rerun()
 
-    # 🚩 [원클릭 오토 세이브]: 수정 위치 추출 누르는 순간 시트까지 다이렉트 저장
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
             sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]]
             
-            # 버튼 누르자마자 현재 채널/주소 정보 끌어모아서 자동 저장
             v = [sd.in_reg_direct, sd.in_v_cat, sd.target_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
             sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             save_db(sd.df) 
             
             sd.map_key += 1
-            st.toast("🎯 마커 이동 및 물리채널/시트 자동 저장 완료!")
+            # 🚩 팝업창 추가: 자동 저장 확인
+            st.toast("🎯 위치 추출 및 물리채널 자동 저장 완료!", icon="✅")
             st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
@@ -193,7 +198,10 @@ with st.sidebar:
                 sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            save_db(sd.df); sd.target_nm = f_nm; st.rerun()
+            save_db(sd.df); sd.target_nm = f_nm
+            # 🚩 팝업창 추가: 수동 데이터 수정 저장 확인
+            st.toast("🎉 데이터 수정 및 저장이 완벽하게 완료되었습니다!", icon="✅")
+            st.rerun()
 
     st.divider()
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
@@ -210,7 +218,6 @@ with st.sidebar:
     
     st.text_area("주소 확인/수정 (직접 드래그 복사 가능)", key="in_v_addr")
     
-    # 🚩 [주소 복사칸 버그 해결]: 실시간으로 갱신되는 텍스트 인풋 사용
     st.caption("📋 복사 전용 주소창")
     st.text_input("주소 복사", value=sd.in_v_addr, key="copy_addr", label_visibility="collapsed", disabled=True)
     
@@ -223,7 +230,10 @@ with st.sidebar:
             del_t = st.selectbox("삭제 시설 선택", curr_names)
             if st.button("🚨 시설 삭제 실행"):
                 sd.df = sd.df[sd.df['이름'] != del_t]
-                save_db(sd.df); sd.target_nm = None; st.rerun()
+                save_db(sd.df); sd.target_nm = None
+                # 🚩 팝업창 추가: 삭제 확인
+                st.toast("🗑️ 데이터가 성공적으로 삭제되었습니다!", icon="✅")
+                st.rerun()
 
     st.divider(); st.markdown("### 📡 물리 채널 설정")
     for section, icons, list_ch in [("DTV", "📡", SL_DTV), ("UHD", "✨", SL_UHD)]:
