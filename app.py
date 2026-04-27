@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정 및 가로 꽉 참 설정
-st.set_page_config(page_title="Broadcasting Master v985.7", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v985.8", layout="wide")
 
 # [V984 오리지널 디자인 CSS]
 st.markdown("""<style>
@@ -46,13 +46,12 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# 🚩 [초기화 방지] 데이터 로드 로직
+# [초기화 방지] 데이터 로드 로직
 def load_db():
     if sd.get('gs_sync_on', False):
         try:
-            st.cache_data.clear() # 캐시 강제 삭제로 항상 최신화
+            st.cache_data.clear() 
             conn = st.connection("gsheets", type=GSheetsConnection)
-            # ttl=0 옵션으로 새로고침 시 무조건 구글 시트 원본을 다시 읽어옵니다.
             df = conn.read(ttl=0).astype(str).fillna("")
             for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
             return df
@@ -68,14 +67,14 @@ def load_db():
         return df
     except: return pd.DataFrame(columns=CL, dtype=str)
 
-# 🚩 [영구 저장] 데이터 저장 로직
+# [영구 저장] 데이터 저장 로직
 def save_db(df):
-    df.to_csv(DB, index=False, encoding='utf-8-sig') # 1차 로컬 파일 저장
+    df.to_csv(DB, index=False, encoding='utf-8-sig') 
     if sd.get('gs_sync_on', False):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
-            conn.update(data=df) # 2차 구글 시트 저장
-            st.cache_data.clear() # 저장 직후 캐시를 날려버려 다음 로드 시 최신본 보장
+            conn.update(data=df) 
+            st.cache_data.clear() 
             st.sidebar.success("✅ 구글 시트 영구 저장 완료! (새로고침해도 유지됨)")
         except Exception as e:
             err_str = str(e)
@@ -102,7 +101,7 @@ if 'df' not in sd:
 
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 6000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 7000,
     'm_mode': "신규 등록", 'target_nm': None,
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소",
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': []
@@ -170,12 +169,11 @@ with st.sidebar:
         except: pass
         sd.map_key += 1; st.rerun()
 
-    # 🚩 [마커 비행 로직 보완]: 조준경(base_center)은 고정, 마커(in_t_la)만 갱신
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
-            sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]] # 지도 움직임 차단
+            sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]] 
             sd.map_key += 1
             st.toast("🎯 마커가 조준경 위치로 이동했습니다. 완료 후 [✅ 데이터 저장]을 꼭 눌러주세요!")
             st.rerun()
@@ -185,7 +183,6 @@ with st.sidebar:
         f_nm = sd.in_v_nm
         f_reg = sd.in_reg_direct if sd.in_reg_box == "+ 새 지역 추가" else sd.in_reg_box
         if f_nm and f_reg:
-            # 🚩 데이터 결합 시 채널 정보(ch_...) 완벽하게 묶어서 보존
             v = [f_reg, sd.in_v_cat, f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
             if sd.m_mode == "정보 수정" and sd.target_nm:
                 sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
@@ -260,7 +257,8 @@ for _, r in res_df.iterrows():
     </div>"""
     folium.Marker([lat, lon], icon=folium.Icon(color=color), popup=folium.Popup(p_html, max_width=400)).add_to(m)
 
-map_res = st_folium(m, use_container_width=True, height=850, key=f"map_{sd.map_key}")
+# 🚩 [세로 크기 확장]: 지도의 높이를 950px로 키웠습니다.
+map_res = st_folium(m, use_container_width=True, height=950, key=f"map_{sd.map_key}")
 if map_res and map_res.get("center"):
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
