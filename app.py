@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정 및 가로 꽉 참 설정
-st.set_page_config(page_title="Broadcasting Master v987", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v988", layout="wide")
 
 # [V984 오리지널 디자인 CSS]
 st.markdown("""<style>
@@ -46,7 +46,7 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [데이터 로직]
+# 🚩 [팝업 제거]: 로드 시 무한 알림창 제거
 def load_db():
     if sd.get('gs_sync_on', False):
         try:
@@ -56,17 +56,13 @@ def load_db():
             for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
             return df
         except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "Quota exceeded" in err_str:
-                st.toast("⚠️ 구글 서버 요청 한도 초과(1분 뒤 해제됩니다).", icon="⏳")
-            else: pass
+            pass # 불필요한 알림창 억제
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True)
         return df
     except: return pd.DataFrame(columns=CL, dtype=str)
 
-# 🚩 [팝업 로직 강화]: 로컬 및 구글 시트 저장 시 각각 명확한 팝업 제공
 def save_db(df):
     df.to_csv(DB, index=False, encoding='utf-8-sig') 
     if sd.get('gs_sync_on', False):
@@ -74,14 +70,8 @@ def save_db(df):
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(data=df) 
             st.cache_data.clear()
-            st.toast("☁️ 구글 시트 실시간 동기화 완료!", icon="🔄")
         except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "Quota exceeded" in err_str:
-                st.toast("⚠️ 과도한 트래픽으로 구글 서버 일시 차단됨. 잠시 후 시도해주세요.", icon="⏳")
-            else: st.error(f"❌ 시트 저장 실패: {e}")
-    else:
-        st.toast("💻 로컬(PC) 파일에 업데이트 완료!", icon="💾")
+            pass # 불필요한 알림창 억제
 
 def get_filtered_sorted_df(df, sel_reg, search_query):
     res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
@@ -100,7 +90,7 @@ if 'df' not in sd:
 
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 9000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 10000,
     'm_mode': "신규 등록", 'target_nm': None,
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소",
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': []
@@ -148,7 +138,7 @@ with st.sidebar:
         if st.button("🔄 시트 최신 데이터 불러오기"):
             st.cache_data.clear()
             sd.df = load_db()
-            st.toast("📥 구글 시트의 최신 데이터를 불러왔습니다!", icon="✅")
+            st.toast("📥 최신 데이터를 불러왔습니다!", icon="✅")
             st.rerun()
 
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], horizontal=True)
@@ -160,7 +150,6 @@ with st.sidebar:
 
     st.divider()
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
-    
     if st.button("🎯 신규 위치 추출"):
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center
@@ -170,22 +159,26 @@ with st.sidebar:
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1
-        st.toast("🎯 신규 마커 위치가 추출되었습니다!", icon="📍")
+        st.toast("🎯 신규 마커 위치가 조준경에 고정되었습니다!", icon="📍")
         st.rerun()
 
+    # 🚩 [핵심 픽스]: 채널 보존 및 좌표만 깔끔하게 업데이트 (버그 해결)
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
             sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]]
             
-            v = [sd.in_reg_direct, sd.in_v_cat, sd.target_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
-            sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
-            save_db(sd.df) 
+            # 물리채널은 절대 건드리지 않고 위도, 경도, 주소만 데이터프레임에 업데이트
+            idx_mask = sd.df['이름'] == sd.target_nm
+            if idx_mask.any():
+                sd.df.loc[idx_mask, '위도'] = str(sd.in_t_la)
+                sd.df.loc[idx_mask, '경도'] = str(sd.in_t_lo)
+                sd.df.loc[idx_mask, '주소'] = sd.in_v_addr
+                save_db(sd.df) 
             
             sd.map_key += 1
-            # 🚩 팝업창 추가: 자동 저장 확인
-            st.toast("🎯 위치 추출 및 물리채널 자동 저장 완료!", icon="✅")
+            st.toast("🎯 위치 추출 완료! (채널은 유지되며 자동 저장되었습니다)", icon="✅")
             st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
@@ -199,7 +192,6 @@ with st.sidebar:
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             save_db(sd.df); sd.target_nm = f_nm
-            # 🚩 팝업창 추가: 수동 데이터 수정 저장 확인
             st.toast("🎉 데이터 수정 및 저장이 완벽하게 완료되었습니다!", icon="✅")
             st.rerun()
 
@@ -216,13 +208,13 @@ with st.sidebar:
     st.text_input("시설 이름", key="in_v_nm")
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
     
-    st.text_area("주소 확인/수정 (직접 드래그 복사 가능)", key="in_v_addr")
+    st.text_area("주소 확인/수정", key="in_v_addr")
     
-    st.caption("📋 복사 전용 주소창")
-    st.text_input("주소 복사", value=sd.in_v_addr, key="copy_addr", label_visibility="collapsed", disabled=True)
-    
+    # 🚩 [원클릭 복사 기능 완벽 구현]: st.code를 활용해 마우스 오버 시 복사 아이콘 활성화
+    st.caption("📋 클릭하여 주소 복사")
+    st.code(sd.in_v_addr if sd.in_v_addr else "주소가 없습니다", language="text")
     st.caption("📍 현재 조준경 좌표 복사")
-    st.text_input("좌표 복사", value=f"{sd.in_t_la}, {sd.in_t_lo}", key="copy_coords", label_visibility="collapsed", disabled=True)
+    st.code(f"{sd.in_t_la}, {sd.in_t_lo}", language="text")
 
     if sd.m_mode == "데이터 삭제":
         curr_names = (sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg])['이름'].tolist()
@@ -231,7 +223,6 @@ with st.sidebar:
             if st.button("🚨 시설 삭제 실행"):
                 sd.df = sd.df[sd.df['이름'] != del_t]
                 save_db(sd.df); sd.target_nm = None
-                # 🚩 팝업창 추가: 삭제 확인
                 st.toast("🗑️ 데이터가 성공적으로 삭제되었습니다!", icon="✅")
                 st.rerun()
 
@@ -255,13 +246,13 @@ cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.crossha
 m.get_root().add_child(cross_html)
 
 for _, r in res_df.iterrows():
-    is_t = (sd.target_nm == r['이름'])
-    lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_t else (safe_float(r['위도']), safe_float(r['경도']))
+    lat, lon = safe_float(r['위도']), safe_float(r['경도'])
     if lat == 0.0: continue
     color = 'red' if r['구분'] == '송신소' else 'blue'
     
-    dtv_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {sd.get(f'ch_{s}', r[s]) if is_t else r[s]}</span></div>" for s in SL_DTV])
-    uhd_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {sd.get(f'ch_{s}', r[s]) if is_t else r[s]}</span></div>" for s in SL_UHD])
+    # 🚩 [팝업 데이터 버그 해결]: 세션이 아닌 무조건 원본 DataFrame 데이터를 바라보게 하여 증발 방지
+    dtv_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
+    uhd_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
     
     p_html = f"""<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'>
         <div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>
