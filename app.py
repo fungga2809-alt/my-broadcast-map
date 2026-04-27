@@ -8,9 +8,9 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정 및 가로 꽉 참 설정
-st.set_page_config(page_title="Broadcasting Master v985.6", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v985.7", layout="wide")
 
-# [V984 오리지널 디자인]
+# [V984 오리지널 디자인 CSS]
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; padding-top: 1rem !important; max-width: 100% !important; }
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -23,7 +23,6 @@ st.markdown("""<style>
 
 sd = st.session_state
 DB = 'stations.csv'
-GS_URL = st.secrets.get("gsheets_url", "")
 
 # [도구함]
 def safe_float(val, default=0.0):
@@ -47,40 +46,41 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# 🚩 [구글 트래픽 초과(429) 방어 로직 강화]
+# 🚩 [초기화 방지] 데이터 로드 로직
 def load_db():
-    if sd.get('gs_sync_on', False) and GS_URL:
+    if sd.get('gs_sync_on', False):
         try:
+            st.cache_data.clear() # 캐시 강제 삭제로 항상 최신화
             conn = st.connection("gsheets", type=GSheetsConnection)
-            # ttl=5를 주어 5초 이내의 중복 새로고침은 구글 API를 호출하지 않도록 방어
-            df = conn.read(spreadsheet=GS_URL, ttl=5).astype(str).fillna("")
+            # ttl=0 옵션으로 새로고침 시 무조건 구글 시트 원본을 다시 읽어옵니다.
+            df = conn.read(ttl=0).astype(str).fillna("")
             for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
-            st.toast("🌐 구글 시트 데이터 동기화 완료!")
             return df
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "Quota exceeded" in err_str:
-                st.warning("⚠️ 구글 서버 요청 한도 초과(1분에 60회 제한). 1분만 기다렸다가 다시 시도해주세요.")
+                st.warning("⚠️ 구글 서버 요청 한도 초과(1분에 60회). 1분 뒤 자동으로 해제됩니다.")
             else:
-                st.error(f"❌ 구글 시트 연결 실패. 로컬 데이터를 불러옵니다: {e}")
+                st.error(f"❌ 구글 시트 연결 실패. 로컬 데이터를 불러옵니다.")
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True)
         return df
     except: return pd.DataFrame(columns=CL, dtype=str)
 
+# 🚩 [영구 저장] 데이터 저장 로직
 def save_db(df):
-    df.to_csv(DB, index=False, encoding='utf-8-sig')
-    if sd.get('gs_sync_on', False) and GS_URL:
+    df.to_csv(DB, index=False, encoding='utf-8-sig') # 1차 로컬 파일 저장
+    if sd.get('gs_sync_on', False):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
-            conn.update(spreadsheet=GS_URL, data=df)
-            st.cache_data.clear()
-            st.sidebar.success("✅ 구글 시트 및 로컬 저장 완료!")
+            conn.update(data=df) # 2차 구글 시트 저장
+            st.cache_data.clear() # 저장 직후 캐시를 날려버려 다음 로드 시 최신본 보장
+            st.sidebar.success("✅ 구글 시트 영구 저장 완료! (새로고침해도 유지됨)")
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "Quota exceeded" in err_str:
-                st.warning("⚠️ 너무 빠른 연속 저장으로 구글 서버가 차단했습니다. 1분 뒤에 다시 저장해주세요.")
+                st.warning("⚠️ 과도한 트래픽으로 구글 서버 일시 차단됨. 잠시 후 다시 시도해주세요.")
             else:
                 st.error(f"❌ 시트 저장 실패: {e}")
     else: st.toast("💾 로컬 CSV 업데이트 완료!")
@@ -102,7 +102,7 @@ if 'df' not in sd:
 
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 5000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 6000,
     'm_mode': "신규 등록", 'target_nm': None,
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소",
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': []
@@ -141,13 +141,13 @@ with st.sidebar:
     if sync_toggle != sd.gs_sync_on:
         sd.gs_sync_on = sync_toggle
         if sd.gs_sync_on: 
-            st.cache_data.clear() # 토글 켤 때는 무조건 최신화
+            st.cache_data.clear() 
             sd.df = load_db()
         st.rerun()
         
     if sd.gs_sync_on:
         if st.button("🔄 시트 최신 데이터 불러오기"):
-            st.cache_data.clear() # 수동 버튼 누를 때만 캐시 삭제 후 요청
+            st.cache_data.clear()
             sd.df = load_db()
             st.rerun()
 
@@ -163,23 +163,29 @@ with st.sidebar:
     if st.button("🎯 신규 위치 추출"):
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center
+        sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]]
         try:
             loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1; st.rerun()
 
+    # 🚩 [마커 비행 로직 보완]: 조준경(base_center)은 고정, 마커(in_t_la)만 갱신
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
-            sd.map_key += 1; st.toast("🎯 마커 이동 완료!"); st.rerun()
+            sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]] # 지도 움직임 차단
+            sd.map_key += 1
+            st.toast("🎯 마커가 조준경 위치로 이동했습니다. 완료 후 [✅ 데이터 저장]을 꼭 눌러주세요!")
+            st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 저장"):
         f_nm = sd.in_v_nm
         f_reg = sd.in_reg_direct if sd.in_reg_box == "+ 새 지역 추가" else sd.in_reg_box
         if f_nm and f_reg:
+            # 🚩 데이터 결합 시 채널 정보(ch_...) 완벽하게 묶어서 보존
             v = [f_reg, sd.in_v_cat, f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
             if sd.m_mode == "정보 수정" and sd.target_nm:
                 sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
