@@ -4,14 +4,14 @@ import folium
 from streamlit_folium import st_folium
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
-from streamlit_gsheets import GSheetsConnection
+from streamlit_gsheets import GSheetsConnection  # 구글 시트 연동 라이브러리
 from branca.element import Template, MacroElement
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v988", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v991", layout="wide")
 DB = 'stations.csv'
-GS_URL = st.secrets.get("gsheets_url", "")
+GS_URL = st.secrets.get("gsheets_url", "") # Secrets에 등록된 URL 사용
 
 sd = st.session_state
 
@@ -46,58 +46,49 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [데이터 로드/저장 로직]
+# [데이터 로드/저장 로직 - 시트 연동 기능 포함]
 def load_db():
     df = pd.DataFrame(columns=CL, dtype=str)
-    
+    # 구글 시트 연동이 ON이고 URL이 있을 때
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
-            # 캐시를 끄고(ttl=0) 시트의 원본 데이터를 읽어옵니다.
             df_gs = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("")
-            
-            # [진단] 시트의 컬럼명이 맞는지 확인
-            missing_cols = [c for c in CL if c not in df_gs.columns]
-            if missing_cols:
-                st.sidebar.error(f"❌ 시트 헤더 불일치: {missing_cols}")
-                st.sidebar.info("구글 시트 1행의 제목이 정확한지 확인하세요.")
-            else:
-                df = df_gs[CL].copy()
-                # 3초 동안 유지되는 성공 메시지
-                msg_p = st.sidebar.empty()
-                msg_p.success("🌐 구글 시트 동기화 성공!")
+            if not df_gs.empty:
+                msg = st.sidebar.empty()
+                msg.success("🌐 구글 시트 데이터 로드 성공!")
                 time.sleep(3)
-                msg_p.empty()
-                return df
-        except Exception as e:
-            st.sidebar.error(f"❌ 연결 오류: {e}")
+                msg.empty()
+                return df_gs.reindex(columns=CL, fill_value="")
+        except: st.sidebar.error("❌ 구글 시트 로드 실패")
 
-    # 로컬 백업 로드
+    # 연동 OFF이거나 시트 실패 시 로컬 로드
     try:
         df_local = pd.read_csv(DB, dtype=str).fillna("")
         if '메모' in df_local.columns: df_local.rename(columns={'메모': '주소'}, inplace=True)
-        for c in CL:
-            if c not in df_local.columns: df_local[c] = ""
-        return df_local[CL]
-    except:
-        return pd.DataFrame(columns=CL, dtype=str)
+        return df_local.reindex(columns=CL, fill_value="")
+    except: return pd.DataFrame(columns=CL, dtype=str)
 
 def save_db(df):
+    # 1. 로컬 stations.csv 저장 (항상 수행)
     df.to_csv(DB, index=False, encoding='utf-8-sig')
+    
+    # 2. 구글 시트 저장 (ON일 때만 수행)
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(spreadsheet=GS_URL, data=df)
-            msg_p = st.sidebar.empty()
-            msg_p.success("✅ 구글 시트 저장 완료 (3초)")
+            msg = st.sidebar.empty()
+            msg.success("✅ 구글 시트 실시간 저장 완료 (3초)")
             time.sleep(3)
-            msg_p.empty()
+            msg.empty()
         except Exception as e:
-            st.error(f"저장 실패: {e}")
+            st.error(f"구글 시트 저장 실패: {e}")
+    else:
+        st.toast("💾 로컬 stations.csv 저장 완료!")
 
-# [필터링 엔진]
+# 🔥 [개선된 통합 검색 및 정렬 엔진]
 def get_filtered_sorted_df(df, sel_reg, search_query):
-    if df.empty: return df
     res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
     if search_query:
         search_target = res['이름'] + " " + res['지역'] + " " + res['주소'] + " " + res[SL].apply(lambda x: ' '.join(x), axis=1)
@@ -109,17 +100,20 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
     return res
 
-# [세션 상태]
+# [세션 상태 초기화]
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 8000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 11000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
     'map_layer': "위성+이름", 'ch_search': "", 'prev_sel': [], 'history': [],
-    'crosshair_center': [35.1796, 129.0756], 'table_font_size': 26, 'gs_sync_on': False
+    'crosshair_center': [35.1796, 129.0756],
+    'gs_sync_on': False, # 구글 시트 연동 초기값 OFF
+    'table_font_size': 26 # 표 글자 크기 초기값
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
+
 if 'df' not in sd: sd.df = load_db()
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
@@ -140,20 +134,29 @@ if 'main_table' in sd:
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
                 sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
-                sd.map_key += 1; st.rerun()
+        else: sd.target_nm, sd.m_mode = None, "신규 등록"
+        sd.map_key += 1; st.rerun()
 
-# CSS (생략 - 기존 스타일 유지)
+# CSS 스타일 (슬라이더 연동 글자 크기 적용)
 st.markdown(f"""<style>
+    html, body, [class*="css"] {{ font-size: 18px !important; }}
     [data-testid="stSidebar"] {{ background-color: #ced4da !important; }}
-    [data-testid="stSidebar"] div.stButton button {{ width: 100% !important; height: 50px !important; border-radius: 10px !important; border: 2px solid #adb5bd !important; font-weight: bold !important; }}
-    [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th {{ font-size: {sd.table_font_size}px !important; }}
+    [data-testid="stSidebar"] div.stButton button {{ width: 100% !important; height: 50px !important; border-radius: 10px !important; border: 2px solid #adb5bd !important; }}
+    div.element-container:has(.btn-red) + div.element-container button {{ background-color: #ff4b4b !important; color: white !important; }}
+    div.element-container:has(.btn-blue) + div.element-container button {{ background-color: #3498db !important; color: white !important; }}
+    div.element-container:has(.btn-green) + div.element-container button {{ background-color: #2ecc71 !important; color: white !important; }}
+    iframe {{ margin-bottom: -30px !important; }}
+    /* 데이터프레임 폰트 동적 설정 */
+    [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th {{ font-size: {sd.table_font_size}px !important; height: 45px !important; }}
 </style>""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 사이드바
 # ---------------------------------------------------------
 with st.sidebar:
-    st.header("⚙️ 관제 설정")
+    st.header("⚙️ 관제 및 관리")
+    
+    # 1. 구글 시트 연동 토글
     old_sync = sd.gs_sync_on
     sd.gs_sync_on = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if old_sync != sd.gs_sync_on:
@@ -166,23 +169,39 @@ with st.sidebar:
     regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
     sd.ch_search = st.text_input("🔎 통합 검색", value=sd.ch_search)
+    
+    # 2. 글자 크기 조절 슬라이더
     sd.table_font_size = st.slider("📊 표 글자 크기 (px)", 10, 50, sd.table_font_size)
 
     st.divider()
+    # v984 원본 추출 버튼
+    st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
     if st.button("🎯 신규 위치 추출"):
         p = sd.crosshair_center
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         try:
-            loc = Nominatim(user_agent="b_v988").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v991").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1; st.rerun()
 
+    st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
+    if st.button("🎯 수정 위치 추출"):
+        p = sd.crosshair_center
+        sd.in_t_la, sd.in_t_lo = p[0], p[1]
+        try:
+            loc = Nominatim(user_agent="b_v991").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            if loc: sd.in_v_addr = loc.address
+        except: pass
+        sd.map_key += 1; st.toast("🎯 조준경 위치 추출 완료!"); st.rerun()
+
+    st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 저장"):
         f_nm = sd.get('in_v_nm', "")
         f_reg = sd.get('in_reg_direct', "") if (sd.m_mode == "정보 수정" or sd.get('in_reg_box') == "+ 새 지역 추가") else sd.get('in_reg_box')
         if f_nm and f_reg:
+            sd.history.append(sd.df.copy())
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
             if sd.m_mode == "정보 수정" and sd.target_nm: 
                 sd.df.loc[sd.df['이름'] == sd.target_nm] = v
@@ -193,6 +212,15 @@ with st.sidebar:
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
+
+    if sd.sel_reg != "전체":
+        st.subheader("🚩 지역명 일괄 변경")
+        new_reg_name = st.text_input(f"'{sd.sel_reg}' 새 이름", key="bulk_name_input")
+        if st.button("일괄 변경 실행"):
+            if new_reg_name:
+                sd.history.append(sd.df.copy())
+                sd.df.loc[sd.df['지역'] == sd.sel_reg, '지역'] = new_reg_name
+                save_db(sd.df); sd.sel_reg = new_reg_name; st.rerun()
 
     st.divider()
     st.markdown("### 📝 시설 정보 입력")
@@ -206,6 +234,14 @@ with st.sidebar:
     st.text_input("시설 이름", key="in_v_nm")
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
     st.text_area("주소 확인/수정", key="in_v_addr")
+    
+    if sd.m_mode == "데이터 삭제":
+        curr_names = (sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg])['이름'].tolist()
+        if curr_names:
+            del_t = st.selectbox("삭제 시설 선택", curr_names)
+            if st.button("🚨 시설 삭제 실행"):
+                sd.history.append(sd.df.copy()); sd.df = sd.df[sd.df['이름'] != del_t]
+                save_db(sd.df); st.rerun()
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider(); st.markdown("### 📡 물리 채널 설정")
@@ -216,7 +252,7 @@ with st.sidebar:
                 with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
 # ---------------------------------------------------------
-# 본문 (지도 및 데이터 표 - 생략된 부분은 v987과 동일)
+# 본문: 지도 및 데이터 현황
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
@@ -225,6 +261,7 @@ l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
 tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
 
+# v984 원본 조준경
 cross_html = MacroElement()
 cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }.map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }</style><div class="map-crosshair"></div>{% endmacro %}""")
 m.get_root().add_child(cross_html)
@@ -232,16 +269,29 @@ m.get_root().add_child(cross_html)
 for _, r in disp_df.iterrows():
     lat, lon = safe_float(r['위도']), safe_float(r['경도'])
     if lat == 0.0: continue
-    folium.Marker([lat, lon], icon=folium.Icon(color='red' if r['구분'] == '송신소' else 'blue', icon='tower-broadcast', prefix='fa'), popup=r['이름']).add_to(m)
+    color = 'red' if r['구분'] == '송신소' else 'blue'
+    folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=r['이름']).add_to(m)
 
-st_folium(m, use_container_width=True, height=700, key=f"map_{sd.map_key}")
+map_data = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
+if map_data and map_data.get("center"): 
+    sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
     view_df = disp_df.copy()
     view_df['구글어스 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
-    st.dataframe(view_df[CL + ['구글어스 좌표']], use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
     
-    col1, col2 = st.columns(2)
-    col1.download_button("📥 CSV 다운로드", data=disp_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
-    col2.download_button("🌍 KML 다운로드", data=generate_kml(disp_df), file_name='stations.kml', use_container_width=True)
+    def style_row(row):
+        bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
+        fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
+        return [f"background-color: {bg}; color: {fg}; font-weight: bold;" for _ in row]
+
+    styled = view_df[CL + ['구글어스 좌표']].style.apply(style_row, axis=1)
+    st.dataframe(styled, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+
+    st.divider()
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("📥 현재 리스트 CSV 다운로드", data=disp_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
+    with c2:
+        st.download_button("🌍 현재 리스트 KML 다운로드", data=generate_kml(disp_df), file_name='stations.kml', use_container_width=True)
