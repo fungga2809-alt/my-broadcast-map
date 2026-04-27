@@ -13,7 +13,7 @@ import time
 # 1. 페이지 설정
 st.set_page_config(page_title="Broadcasting Master v984", layout="wide")
 DB = 'stations.csv'
-# Secrets에서 주소를 읽어옵니다.
+# Secrets에서 주소를 정확히 읽어옵니다.
 GS_URL = st.secrets.get("gsheets_url", "") 
 
 sd = st.session_state
@@ -49,27 +49,29 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [데이터 로드/저장]
+# [데이터 로드/저장] - 🔥 연동 에러 확인 로직 강화
 def load_db():
     df = pd.DataFrame(columns=CL, dtype=str)
     
     # 구글 시트 연동 로드 시도
     if sd.get('gs_sync_on', False):
         if not GS_URL:
-            st.error("⚠️ Secrets에서 gsheets_url 주소를 읽지 못했습니다. (줄바꿈 오타 확인 필요)")
+            st.error("⚠️ Secrets 설정에서 gsheets_url 주소를 찾을 수 없습니다. (줄바꿈 확인 필요)")
         else:
             try:
+                # 전문가님의 환경에 최적화된 연결 방식
                 conn = st.connection("gsheets", type=GSheetsConnection)
-                df = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("")
+                # 🚩 spreadsheet 인자를 제거하여 Secrets 설정을 우선적으로 따릅니다.
+                df = conn.read(ttl=0).astype(str).fillna("") 
                 for s in SL:
                     df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
-                st.success("🌐 구글 시트 데이터 로드 성공!")
+                st.toast("🌐 구글 시트 데이터 로드 성공!")
                 return df
             except Exception as e:
-                # 🚩 여기서 진짜 연동 실패 이유를 보여줍니다.
+                # 🚩 실패 원인을 화면에 명확하게 표시합니다.
                 st.error(f"❌ 구글 시트 연결 실패: {e}")
     
-    # 실패 시 로컬 로드
+    # 실패 시 또는 OFF 시 로컬 로드
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         df['이름'] = df['이름'].str.strip()
@@ -79,7 +81,10 @@ def load_db():
     except: return pd.DataFrame(columns=CL, dtype=str)
 
 def save_db(df):
+    # 1. 로컬 저장
     df.to_csv(DB, index=False, encoding='utf-8-sig')
+    
+    # 2. 구글 시트 저장
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
@@ -155,7 +160,8 @@ with st.sidebar:
     old_sync = sd.gs_sync_on
     sd.gs_sync_on = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if old_sync != sd.gs_sync_on:
-        sd.df = load_db(); st.rerun()
+        sd.df = load_db()
+        st.rerun()
 
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], index=["일반", "위성", "위성+이름"].index(sd.map_layer), horizontal=True)
     st.divider()
@@ -185,7 +191,8 @@ with st.sidebar:
             loc = Nominatim(user_agent="b_v984").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
-        sd.map_key += 1; st.toast("🎯 마커 이동 완료!"); st.rerun()
+        sd.map_key += 1 
+        st.toast("🎯 마커 이동 완료!"); st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 저장"):
@@ -195,9 +202,10 @@ with st.sidebar:
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
             if sd.m_mode == "정보 수정" and sd.target_nm: 
                 sd.df.loc[sd.df['이름'] == sd.target_nm] = v
+                sd.target_nm = f_nm
             else: 
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            save_db(sd.df); sd.prev_sel = []; st.rerun()
+            save_db(sd.df); st.rerun()
 
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
@@ -254,7 +262,7 @@ for _, r in disp_df.iterrows():
     p_html = f"<div style='width:350px; font-size:15px;'><div style='font-size:20px; font-weight:bold;'>[{r['구분']}] {r['이름']}</div><div>{r['주소']}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'>{dtv_list}</div><div style='width:48%; color:#007bff;'>{uhd_list}</div></div></div>"
     folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
 
-st_folium(m, use_container_width=True, height=650, key=f"map_{sd.map_key}")
+st_folium(m, use_container_width=True, height=1000, key=f"map_{sd.map_key}")
 
 # ---------------------------------------------------------
 # 📊 데이터 현황
