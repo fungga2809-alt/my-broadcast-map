@@ -77,7 +77,7 @@ def save_db(df):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(data=df)
-            st.cache_data.clear() 
+            st.cache_data.clear() # 캐시 즉시 삭제로 강력한 동기화
             st.sidebar.success("✅ 구글 시트 저장 및 동기화 완료!")
             time.sleep(1)
         except Exception as e:
@@ -100,7 +100,8 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 # [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
-    'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 4000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 
+    'base_zoom': 14, 'map_key': 4000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
@@ -111,7 +112,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 테이블 클릭 시
+# 🚩 테이블 클릭 시에만 지도를 해당 시설로 강제 이동 (드래그 시 튕김 현상 방지)
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -126,7 +127,7 @@ if 'main_table' in sd:
                 sd.in_v_addr = str(sel['주소'])
                 for s in SL: sd[f"ch_{s}"] = str(sel[s])
                 sd.in_t_la, sd.in_t_lo = safe_float(sel['위도']), safe_float(sel['경도'])
-                sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
+                sd.base_center = [sd.in_t_la, sd.in_t_lo] # 지도 이동의 기준점 설정
                 sd.map_key += 1
                 st.rerun()
 
@@ -165,6 +166,7 @@ with st.sidebar:
         p = sd.crosshair_center
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
+        sd.base_center = [p[0], p[1]]
         try:
             loc = Nominatim(user_agent="b_v984").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
@@ -175,8 +177,9 @@ with st.sidebar:
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center[0], sd.crosshair_center[1]
+            sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]] # 지도가 튕기지 않도록 기준점 고정
             sd.map_key += 1 
-            st.toast("🎯 마커가 조준경 위치로 이동되었습니다! (주소 유지)")
+            st.toast("🎯 마커가 조준경 위치로 이동되었습니다! (나머지 정보 유지)")
             st.rerun()
         else:
             st.warning("먼저 표에서 수정할 시설을 선택해 주세요.")
@@ -226,12 +229,13 @@ with st.sidebar:
         for i, s in enumerate(list_ch):
             with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
+# 🚩 지도는 오직 'base_center'만을 기준으로 동작합니다. 드래그할 때 튕기지 않습니다!
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
 l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
 tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
-m = folium.Map(location=sd.crosshair_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
+m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
 cross_html = MacroElement()
 cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }.map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }</style><div class="map-crosshair"></div>{% endmacro %}""")
 m.get_root().add_child(cross_html)
@@ -261,9 +265,9 @@ for _, r in disp_df.iterrows():
         </div>
     </div>"""
     
-    # 🚩 마커 디자인을 기존의 기본 디자인으로 원상복구했습니다.
     folium.Marker([lat, lon], icon=folium.Icon(color=color), popup=folium.Popup(p_html, max_width=400)).add_to(m)
 
+# 조준경의 현재 위치만 조용히 저장합니다.
 map_data = st_folium(m, use_container_width=True, height=680, key=f"map_{sd.map_key}")
 if map_data and map_data.get("center"):
     sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
