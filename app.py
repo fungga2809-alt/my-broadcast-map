@@ -17,7 +17,7 @@ GS_URL = st.secrets.get("gsheets_url", "")
 
 sd = st.session_state
 
-# [에러 메시지 관리] - 고정 노출용
+# [에러 메시지 관리]
 if 'error_msg' not in sd: sd.error_msg = None
 
 # [도구함]
@@ -58,7 +58,7 @@ def load_db():
     
     if sd.get('gs_sync_on', False):
         if not GS_URL:
-            sd.error_msg = "⚠️ Secrets 설정에서 gsheets_url을 읽지 못했습니다. (줄바꿈 확인 필요)"
+            sd.error_msg = "⚠️ Secrets 설정에서 gsheets_url을 읽지 못했습니다."
         else:
             try:
                 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -103,6 +103,7 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
     return res
 
+# [세션 상태 초기화]
 if 'df' not in sd: sd.df = load_db()
 defaults = {
     'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 4000,
@@ -117,6 +118,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
+# 🛠️ [버그 수정 1]: 더블 클릭을 유발하던 강제 새로고침(rerun) 로직 완벽 개선
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -132,9 +134,9 @@ if 'main_table' in sd:
                 sd.in_t_la, sd.in_t_lo, sd.in_v_addr = safe_float(sel['위도']), safe_float(sel['경도']), str(sel['주소'])
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
                 sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
-        else: sd.target_nm, sd.m_mode = None, "신규 등록"
-        sd.map_key += 1; st.rerun()
+                sd.map_key += 1
 
+# CSS 스타일 보존
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -189,21 +191,32 @@ with st.sidebar:
         sd.map_key += 1; st.toast("🎯 마커 이동 완료!"); st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
+    
+    # 🛠️ [버그 수정 2]: 데이터 저장 시 누락 없이 확실하게 매칭하여 덮어쓰기
     if st.button("✅ 데이터 저장"):
         f_nm = sd.get('in_v_nm', "")
         f_reg = sd.get('in_reg_direct', "") if (sd.m_mode == "정보 수정" or sd.get('in_reg_box') == "+ 새 지역 추가") else sd.get('in_reg_box')
         if f_nm and f_reg:
             v = [f_reg, sd.get('in_v_cat', "중계소"), f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.get('in_v_addr', "")]
             if sd.m_mode == "정보 수정" and sd.target_nm: 
-                sd.df.loc[sd.df['이름'] == sd.target_nm] = v
+                mask = sd.df['이름'] == sd.target_nm
+                if mask.any():
+                    sd.df.loc[mask, CL] = v
                 sd.target_nm = f_nm
             else: 
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            save_db(sd.df); st.rerun()
+                sd.target_nm = f_nm
+                sd.m_mode = "정보 수정"
+            save_db(sd.df); sd.prev_sel = []; st.rerun()
 
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
-    sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
+    new_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
+    if new_mode != sd.m_mode:
+        sd.m_mode = new_mode
+        if new_mode == "신규 등록":
+            sd.target_nm = None
+        st.rerun()
 
     st.divider(); st.markdown("### 📝 시설 정보 입력")
     if sd.m_mode == "신규 등록":
@@ -217,13 +230,17 @@ with st.sidebar:
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
     st.text_area("주소 확인/수정", key="in_v_addr")
     
+    # 🛠️ [버그 수정 3]: 데이터 삭제 시 한 번만 눌러도 완벽하게 동작
     if sd.m_mode == "데이터 삭제":
         curr_names = (sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg])['이름'].tolist()
         if curr_names:
-            del_t = st.selectbox("삭제 시설 선택", curr_names)
+            default_idx = curr_names.index(sd.target_nm) if sd.target_nm in curr_names else 0
+            del_t = st.selectbox("삭제 시설 선택", curr_names, index=default_idx)
             if st.button("🚨 시설 삭제 실행"):
                 sd.df = sd.df[sd.df['이름'] != del_t]
-                save_db(sd.df); st.rerun()
+                if sd.target_nm == del_t:
+                    sd.target_nm = None
+                save_db(sd.df); sd.prev_sel = []; st.rerun()
 
     st.divider(); st.markdown("### 📡 물리 채널 설정")
     for section, icons, list_ch in [("DTV", "📡", SL_DTV), ("UHD", "✨", SL_UHD)]:
@@ -232,9 +249,7 @@ with st.sidebar:
         for i, s in enumerate(list_ch):
             with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
-# ---------------------------------------------------------
-# 본문: 지도 (🚩 16:9 와이드 비율 및 🚩 원본 팝업 디자인 복구)
-# ---------------------------------------------------------
+# 원본 팝업 디자인 및 16:9 지도 보존
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
@@ -251,7 +266,6 @@ for _, r in disp_df.iterrows():
     if lat == 0.0: continue
     color = 'red' if r['구분'] == '송신소' else 'blue'
     
-    # 🔥 [전문가님 원본 팝업 디자인 복구]
     dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
     uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
     p_html = f"""<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'>
@@ -268,7 +282,7 @@ for _, r in disp_df.iterrows():
 
 st_folium(m, use_container_width=True, height=680, key=f"map_{sd.map_key}")
 
-# 📊 데이터 현황 (26px & 컬러 완벽 보존)
+# 26px 및 컬러 완벽 보존
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
     view_df = disp_df.copy()
