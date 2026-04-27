@@ -4,14 +4,13 @@ import folium
 from streamlit_folium import st_folium
 from streamlit_js_eval import get_geolocation
 from geopy.geocoders import Nominatim
-from streamlit_gsheets import GSheetsConnection  # 구글 시트 연동용
+from streamlit_gsheets import GSheetsConnection
 from branca.element import Template, MacroElement
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v995", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v996", layout="wide")
 DB = 'stations.csv'
-# secrets.toml에 설정된 구글 시트 URL을 가져옵니다.
 GS_URL = st.secrets.get("gsheets_url", "")
 
 sd = st.session_state
@@ -49,15 +48,12 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 # [데이터 로드/저장 로직]
 def load_db():
-    # 구글 시트 연동이 켜져 있는 경우
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             df = conn.read(spreadsheet=GS_URL, ttl=0)
             return df.astype(str).fillna("")
-        except:
-            pass # 실패 시 로컬로 자동 전환
-
+        except: pass
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         df['이름'] = df['이름'].str.strip()
@@ -65,25 +61,27 @@ def load_db():
     except: return pd.DataFrame(columns=CL, dtype=str)
 
 def save_db(df):
-    # 1. 로컬 저장 (항상 수행)
+    # 로컬 저장
     df.to_csv(DB, index=False, encoding='utf-8-sig')
     
-    # 2. 구글 시트 연동 저장 (ON일 때만)
+    # 구글 시트 저장 및 3초 메시지
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(spreadsheet=GS_URL, data=df)
-            msg = st.success("✅ 로컬 및 구글 시트 저장 성공! (3초간 유지)")
+            msg_area = st.empty()
+            msg_area.success("✅ 로컬 및 구글 시트 저장 성공! (3초 후 새로고침)")
             time.sleep(3)
-            msg.empty()
+            msg_area.empty()
         except Exception as e:
-            msg = st.error(f"❌ 구글 시트 저장 오류: {e} (3초간 유지)")
+            msg_area = st.empty()
+            msg_area.error(f"❌ 구글 시트 저장 오류: {e} (3초 후 새로고침)")
             time.sleep(3)
-            msg.empty()
+            msg_area.empty()
     else:
         st.toast("💾 로컬 stations.csv 저장 완료!")
 
-# 🔥 [통합 검색 및 정렬 엔진]
+# [필터링 및 정렬]
 def get_filtered_sorted_df(df, sel_reg, search_query):
     res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
     if search_query:
@@ -98,13 +96,14 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 
 # [세션 상태 초기화]
 defaults = {
-    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 11000,
+    'base_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 12000,
     'sel_reg': "전체", 'm_mode': "신규 등록", 'target_nm': None, 
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소", 
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "",
-    'map_layer': "위 satellite", 'ch_search': "", 'prev_sel': [], 'history': [],
+    'map_layer': "위성+이름",  # [수정] 오타 수정완료
+    'ch_search': "", 'prev_sel': [], 'history': [],
     'crosshair_center': [35.1796, 129.0756],
-    'gs_sync_on': False  # 구글 시트 연동 초기값: OFF
+    'gs_sync_on': False
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -113,7 +112,7 @@ if 'df' not in sd: sd.df = load_db()
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 선택 이벤트 (v984 유지)
+# 표 선택 이벤트
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -132,7 +131,7 @@ if 'main_table' in sd:
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
-# CSS 스타일 (26px 유지)
+# [CSS]
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -140,7 +139,6 @@ st.markdown("""<style>
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
-    iframe { margin-bottom: -30px !important; }
     [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { font-size: 26px !important; height: 45px !important; }
 </style>""", unsafe_allow_html=True)
 
@@ -150,14 +148,17 @@ st.markdown("""<style>
 with st.sidebar:
     st.header("⚙️ 관제 설정")
     
-    # 🔥 1. 구글 시트 연동 토글 버튼
+    # 1. 구글 시트 연동 토글
     sd.gs_sync_on = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     
     st.divider()
-    sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], index=["일반", "위성", "위성+이름"].index(sd.map_layer), horizontal=True)
+    # 2. 레이어 선택 (에러 수정됨)
+    ly_opts = ["일반", "위성", "위성+이름"]
+    ly_idx = ly_opts.index(sd.map_layer) if sd.map_layer in ly_opts else 0
+    sd.map_layer = st.radio("🗺️ 레이어", ly_opts, index=ly_idx, horizontal=True)
     
     st.divider()
-    regs = sorted(sd.df['지역'].unique().tolist())
+    regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs, index=(regs.index(sd.sel_reg)+1 if sd.sel_reg in regs else 0))
     sd.ch_search = st.text_input("🔎 통합 검색", value=sd.ch_search)
 
@@ -168,7 +169,7 @@ with st.sidebar:
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         try:
-            loc = Nominatim(user_agent="b_v995").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v996").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
         sd.map_key += 1; st.rerun()
@@ -178,10 +179,10 @@ with st.sidebar:
         p = sd.crosshair_center
         sd.in_t_la, sd.in_t_lo = p[0], p[1]
         try:
-            loc = Nominatim(user_agent="b_v995").reverse(f"{p[0]}, {p[1]}", timeout=3)
+            loc = Nominatim(user_agent="b_v996").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
-        sd.map_key += 1; st.toast("🎯 마커 이동 완료!"); st.rerun()
+        sd.map_key += 1; st.toast("🎯 위치 추출 완료"); st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 저장"):
@@ -219,7 +220,7 @@ with st.sidebar:
             del_t = st.selectbox("삭제 시설 선택", curr_names)
             if st.button("🚨 시설 삭제 실행"):
                 sd.history.append(sd.df.copy()); sd.df = sd.df[sd.df['이름'] != del_t]
-                save_db(sd.df); st.rerun()
+                save_db(sd.df); sd.target_nm = None; st.rerun()
 
     if sd.m_mode in ["신규 등록", "정보 수정"]:
         st.divider(); st.markdown("### 📡 물리 채널 설정")
