@@ -13,6 +13,7 @@ import time
 # 1. 페이지 설정
 st.set_page_config(page_title="Broadcasting Master v984", layout="wide")
 DB = 'stations.csv'
+# Secrets에서 주소를 읽어옵니다.
 GS_URL = st.secrets.get("gsheets_url", "") 
 
 sd = st.session_state
@@ -51,19 +52,24 @@ CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 # [데이터 로드/저장]
 def load_db():
     df = pd.DataFrame(columns=CL, dtype=str)
-    # 구글 시트 연동 로드
-    if sd.get('gs_sync_on', False) and GS_URL:
-        try:
-            conn = st.connection("gsheets", type=GSheetsConnection)
-            df = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("")
-            for s in SL:
-                df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
-            st.toast("🌐 구글 시트에서 데이터를 성공적으로 가져왔습니다.")
-            return df
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ 시트 연결 실패(로컬 로드): {e}")
     
-    # 로컬 CSV 로드
+    # 구글 시트 연동 로드 시도
+    if sd.get('gs_sync_on', False):
+        if not GS_URL:
+            st.error("⚠️ Secrets에서 gsheets_url 주소를 읽지 못했습니다. (줄바꿈 오타 확인 필요)")
+        else:
+            try:
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                df = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("")
+                for s in SL:
+                    df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
+                st.success("🌐 구글 시트 데이터 로드 성공!")
+                return df
+            except Exception as e:
+                # 🚩 여기서 진짜 연동 실패 이유를 보여줍니다.
+                st.error(f"❌ 구글 시트 연결 실패: {e}")
+    
+    # 실패 시 로컬 로드
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         df['이름'] = df['이름'].str.strip()
@@ -78,7 +84,7 @@ def save_db(df):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(spreadsheet=GS_URL, data=df)
-            st.sidebar.success("✅ 로컬 및 구글 시트 저장 성공! (3초 유지)")
+            st.sidebar.success("✅ 로컬 및 구글 시트 저장 성공!")
             time.sleep(2)
         except Exception as e:
             st.sidebar.error(f"❌ 저장 오류: {e}")
@@ -131,7 +137,6 @@ if 'main_table' in sd:
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
-# CSS 스타일 (와이드 뷰 및 26px 폰트 유지)
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -139,7 +144,6 @@ st.markdown("""<style>
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
-    iframe { border-radius: 15px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important; }
     [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { font-size: 26px !important; height: 45px !important; }
 </style>""", unsafe_allow_html=True)
 
@@ -193,12 +197,7 @@ with st.sidebar:
                 sd.df.loc[sd.df['이름'] == sd.target_nm] = v
             else: 
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            
-            save_db(sd.df)
-            sd.prev_sel = [] 
-            if 'main_table' in sd:
-                sd.main_table = {"selection": {"rows": []}}
-            st.rerun()
+            save_db(sd.df); sd.prev_sel = []; st.rerun()
 
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
@@ -233,7 +232,7 @@ with st.sidebar:
             with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
 # ---------------------------------------------------------
-# 본문: 지도 (와이드 비율)
+# 본문: 지도
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
@@ -258,7 +257,7 @@ for _, r in disp_df.iterrows():
 st_folium(m, use_container_width=True, height=650, key=f"map_{sd.map_key}")
 
 # ---------------------------------------------------------
-# 📊 데이터 현황 (업로드 창 밖으로 이동)
+# 📊 데이터 현황
 # ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
@@ -276,16 +275,14 @@ if not disp_df.empty:
     with c1: st.download_button("📥 CSV 다운로드", data=disp_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
     with c2: st.download_button("🌍 KML 다운로드", data=generate_kml(disp_df), file_name='stations.kml', use_container_width=True)
 
-# 🔥 [이동] 업로드 창을 조건문 밖으로 꺼냈습니다. 데이터가 없어도 항상 보입니다.
 st.divider()
 st.markdown("#### 📤 수정한 CSV 파일 즉시 적용 (덮어쓰기)")
-uploaded_file = st.file_uploader("CSV 파일을 드래그하거나 클릭하여 업로드하세요.", type=['csv'], label_visibility="visible")
+uploaded_file = st.file_uploader("", type=['csv'], label_visibility="collapsed")
 if uploaded_file is not None:
-    if st.button("🔄 업로드한 파일로 즉시 데이터 덮어쓰기", use_container_width=True):
+    if st.button("🔄 업로드한 파일로 즉시 데이터 덮어쓰기"):
         try:
             new_df = pd.read_csv(uploaded_file, dtype=str).fillna("")
             if '이름' in new_df.columns:
                 sd.df = new_df
                 save_db(sd.df); st.rerun()
-            else: st.error("⚠️ 올바른 stations.csv 파일이 아닙니다. ('이름' 컬럼 없음)")
         except Exception as e: st.error(f"오류: {e}")
