@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정 및 가로 꽉 참 설정
-st.set_page_config(page_title="Broadcasting Master v985.5", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v985.6", layout="wide")
 
 # [V984 오리지널 디자인]
 st.markdown("""<style>
@@ -47,18 +47,22 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [데이터 로직]
+# 🚩 [구글 트래픽 초과(429) 방어 로직 강화]
 def load_db():
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
-            st.cache_data.clear()
             conn = st.connection("gsheets", type=GSheetsConnection)
-            df = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("")
+            # ttl=5를 주어 5초 이내의 중복 새로고침은 구글 API를 호출하지 않도록 방어
+            df = conn.read(spreadsheet=GS_URL, ttl=5).astype(str).fillna("")
             for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
-            st.toast("🌐 구글 시트 최신 데이터 동기화 완료!")
+            st.toast("🌐 구글 시트 데이터 동기화 완료!")
             return df
         except Exception as e:
-            st.error(f"❌ 구글 시트 연결 실패. 로컬 데이터를 불러옵니다: {e}")
+            err_str = str(e)
+            if "429" in err_str or "Quota exceeded" in err_str:
+                st.warning("⚠️ 구글 서버 요청 한도 초과(1분에 60회 제한). 1분만 기다렸다가 다시 시도해주세요.")
+            else:
+                st.error(f"❌ 구글 시트 연결 실패. 로컬 데이터를 불러옵니다: {e}")
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True)
@@ -73,7 +77,12 @@ def save_db(df):
             conn.update(spreadsheet=GS_URL, data=df)
             st.cache_data.clear()
             st.sidebar.success("✅ 구글 시트 및 로컬 저장 완료!")
-        except Exception as e: st.error(f"❌ 시트 저장 실패: {e}")
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "Quota exceeded" in err_str:
+                st.warning("⚠️ 너무 빠른 연속 저장으로 구글 서버가 차단했습니다. 1분 뒤에 다시 저장해주세요.")
+            else:
+                st.error(f"❌ 시트 저장 실패: {e}")
     else: st.toast("💾 로컬 CSV 업데이트 완료!")
 
 def get_filtered_sorted_df(df, sel_reg, search_query):
@@ -88,13 +97,12 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
     return res
 
-# 🚩 [원인 해결]: 앱 초기화 시 데이터 다운로드 분리 (지도 튕김, 렉 완벽 제거)
 if 'df' not in sd:
     sd.df = load_db()
 
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 4000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 5000,
     'm_mode': "신규 등록", 'target_nm': None,
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소",
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': []
@@ -129,15 +137,17 @@ with st.sidebar:
             sd.df = pd.read_csv(uploaded_file, dtype=str).fillna("")
             save_db(sd.df); st.rerun()
 
-    # 🚩 수동 동기화 제어
     sync_toggle = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if sync_toggle != sd.gs_sync_on:
         sd.gs_sync_on = sync_toggle
-        if sd.gs_sync_on: sd.df = load_db()
+        if sd.gs_sync_on: 
+            st.cache_data.clear() # 토글 켤 때는 무조건 최신화
+            sd.df = load_db()
         st.rerun()
         
     if sd.gs_sync_on:
         if st.button("🔄 시트 최신 데이터 불러오기"):
+            st.cache_data.clear() # 수동 버튼 누를 때만 캐시 삭제 후 요청
             sd.df = load_db()
             st.rerun()
 
