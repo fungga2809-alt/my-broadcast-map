@@ -10,7 +10,7 @@ from branca.element import Template, MacroElement
 from streamlit_gsheets import GSheetsConnection 
 import time 
 
-# 1. 페이지 설정
+# 1. 페이지 설정 - 와이드 모드 활성화
 st.set_page_config(page_title="Broadcasting Master v984", layout="wide")
 DB = 'stations.csv'
 GS_URL = st.secrets.get("gsheets_url", "") 
@@ -73,13 +73,12 @@ def save_db(df):
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(spreadsheet=GS_URL, data=df)
-            msg = st.success("✅ 로컬 및 구글 시트 저장 성공! (3초 유지)")
+            msg = st.sidebar.success("✅ 로컬 및 구글 시트 저장 성공! (3초 유지)")
             time.sleep(3)
             msg.empty()
         except Exception as e:
-            msg = st.error(f"❌ 저장 오류: {e}")
+            st.sidebar.error(f"❌ 저장 오류: {e}")
             time.sleep(3)
-            msg.empty()
     else:
         st.toast("💾 로컬 stations.csv 저장 완료!")
 
@@ -110,7 +109,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 표 선택 이벤트
+# 표 선택 이벤트 (정보 수정 시 불러오기)
 if 'main_table' in sd:
     curr_sel = sd.main_table.get("selection", {}).get("rows", [])
     if curr_sel != sd.prev_sel:
@@ -129,7 +128,7 @@ if 'main_table' in sd:
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
-# CSS 스타일
+# CSS 스타일 (와이드 비율 및 디자인 보존)
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -137,7 +136,7 @@ st.markdown("""<style>
     div.element-container:has(.btn-red) + div.element-container button { background-color: #ff4b4b !important; color: white !important; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #3498db !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2ecc71 !important; color: white !important; }
-    iframe { margin-bottom: -30px !important; }
+    iframe { border-radius: 15px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important; }
     [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { font-size: 26px !important; height: 45px !important; }
 </style>""", unsafe_allow_html=True)
 
@@ -149,8 +148,7 @@ with st.sidebar:
     old_sync = sd.gs_sync_on
     sd.gs_sync_on = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if old_sync != sd.gs_sync_on:
-        sd.df = load_db()
-        st.rerun()
+        sd.df = load_db(); st.rerun()
 
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], index=["일반", "위성", "위성+이름"].index(sd.map_layer), horizontal=True)
     st.divider()
@@ -196,14 +194,10 @@ with st.sidebar:
             else: 
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             
-            # 🔥 [수정] 실제 저장 실행
             save_db(sd.df)
-            
-            # 🔥 [수정] 저장이 끝나면 표 선택 상태를 강제로 비워 위치 초기화 방지
             sd.prev_sel = [] 
             if 'main_table' in sd:
                 sd.main_table = {"selection": {"rows": []}}
-            
             st.rerun()
 
     st.divider()
@@ -240,7 +234,7 @@ with st.sidebar:
                 with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
 # ---------------------------------------------------------
-# 본문: 지도
+# 본문: 지도 (와이드 9:16 비율 적용)
 # ---------------------------------------------------------
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
@@ -248,12 +242,16 @@ disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 with st.container():
     l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
     tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
+    
+    # 지도를 생성합니다.
     m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='G')
     
+    # 조준경 추가
     cross_html = MacroElement()
     cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.map-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.map-crosshair::before, .map-crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.map-crosshair::before { top: 17px; left: -10px; width: 56px; height: 2px; }.map-crosshair::after { left: 17px; top: -10px; height: 56px; width: 2px; }</style><div class="map-crosshair"></div>{% endmacro %}""")
     m.get_root().add_child(cross_html)
     
+    # 마커 배치
     for _, r in disp_df.iterrows():
         is_t = (sd.target_nm == r['이름'])
         lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_t else (safe_float(r['위도']), safe_float(r['경도']))
@@ -264,7 +262,8 @@ with st.container():
         p_html = f"<div style='width:350px; font-family:sans-serif; font-size:15px; line-height:1.5;'><div style='font-size:20px; font-weight:bold; color:#333; border-bottom:2px solid #ccc; padding-bottom:5px; margin-bottom:10px;'>[{r['구분']}] <span style='background-color:#ffff00; padding:2px 5px;'>{r['이름']}</span></div><div style='color:#666; margin-bottom:12px; font-size:13px;'>{r['주소']}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;'>📡 DTV</div>{dtv_list}</div><div style='width:48%; border-left:1px solid #ddd; padding-left:12px;'><div style='font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px; color:#007bff;'>✨ UHD</div>{uhd_list}</div></div></div>"
         folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
     
-    map_data = st_folium(m, use_container_width=True, height=1000, key=f"map_{sd.map_key}")
+    # 🔥 [와이드 높이 설정] 9:16 와이드 비율을 위해 높이를 600~700 정도로 최적화
+    map_data = st_folium(m, use_container_width=True, height=650, key=f"map_{sd.map_key}")
     if map_data and map_data.get("center"): 
         sd.crosshair_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
 
@@ -286,15 +285,3 @@ if not disp_df.empty:
     c1, c2 = st.columns(2)
     with c1: st.download_button("📥 CSV 다운로드", data=disp_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
     with c2: st.download_button("🌍 KML 다운로드", data=generate_kml(disp_df), file_name='stations.kml', use_container_width=True)
-    
-    st.divider()
-    st.markdown("#### 📤 수정한 CSV 파일 즉시 적용")
-    uploaded_file = st.file_uploader("", type=['csv'], label_visibility="collapsed")
-    if uploaded_file is not None:
-        if st.button("🔄 업로드한 파일로 즉시 데이터 덮어쓰기"):
-            try:
-                new_df = pd.read_csv(uploaded_file, dtype=str).fillna("")
-                if '이름' in new_df.columns:
-                    sd.df = new_df
-                    save_db(sd.df); st.rerun()
-            except Exception as e: st.error(f"오류: {e}")
