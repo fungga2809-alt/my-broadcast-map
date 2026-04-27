@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정 및 가로 꽉 참 설정
-st.set_page_config(page_title="Broadcasting Master v988", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v989", layout="wide")
 
 # [V984 오리지널 디자인 CSS]
 st.markdown("""<style>
@@ -46,7 +46,7 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# 🚩 [팝업 제거]: 로드 시 무한 알림창 제거
+# [데이터 로직]
 def load_db():
     if sd.get('gs_sync_on', False):
         try:
@@ -56,7 +56,10 @@ def load_db():
             for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
             return df
         except Exception as e:
-            pass # 불필요한 알림창 억제
+            err_str = str(e)
+            if "429" in err_str or "Quota exceeded" in err_str:
+                st.toast("⚠️ 구글 서버 요청 한도 초과(1분 뒤 해제됩니다).", icon="⏳")
+            else: pass
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True)
@@ -71,7 +74,10 @@ def save_db(df):
             conn.update(data=df) 
             st.cache_data.clear()
         except Exception as e:
-            pass # 불필요한 알림창 억제
+            err_str = str(e)
+            if "429" in err_str or "Quota exceeded" in err_str:
+                st.toast("⚠️ 과도한 트래픽으로 구글 서버 일시 차단됨. 잠시 후 시도해주세요.", icon="⏳")
+            else: st.error(f"❌ 시트 저장 실패: {e}")
 
 def get_filtered_sorted_df(df, sel_reg, search_query):
     res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
@@ -88,12 +94,14 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 if 'df' not in sd:
     sd.df = load_db()
 
+# 세션 상태 변수 추가
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 10000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 11000,
     'm_mode': "신규 등록", 'target_nm': None,
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소",
-    'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': []
+    'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': [],
+    'show_save_msg': False, 'show_extract_msg': False
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -148,8 +156,15 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 통합 검색", placeholder="시설명, 지역, 물리번호 등")
 
+    # 🚩 [요청 2]: 복사 기능을 통합 검색창 바로 아래로 전진 배치
+    st.caption("📋 클릭하여 주소 복사")
+    st.code(sd.in_v_addr if sd.in_v_addr else "주소가 없습니다", language="text")
+    st.caption("📍 현재 조준경 좌표 복사")
+    st.code(f"{sd.in_t_la}, {sd.in_t_lo}", language="text")
+
     st.divider()
     st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
+    
     if st.button("🎯 신규 위치 추출"):
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center
@@ -162,14 +177,12 @@ with st.sidebar:
         st.toast("🎯 신규 마커 위치가 조준경에 고정되었습니다!", icon="📍")
         st.rerun()
 
-    # 🚩 [핵심 픽스]: 채널 보존 및 좌표만 깔끔하게 업데이트 (버그 해결)
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
             sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]]
             
-            # 물리채널은 절대 건드리지 않고 위도, 경도, 주소만 데이터프레임에 업데이트
             idx_mask = sd.df['이름'] == sd.target_nm
             if idx_mask.any():
                 sd.df.loc[idx_mask, '위도'] = str(sd.in_t_la)
@@ -178,8 +191,14 @@ with st.sidebar:
                 save_db(sd.df) 
             
             sd.map_key += 1
-            st.toast("🎯 위치 추출 완료! (채널은 유지되며 자동 저장되었습니다)", icon="✅")
+            # 자동 저장 메시지 예약
+            sd.show_extract_msg = True
             st.rerun()
+
+    # 추출 버튼 바로 아래에 알림 렌더링
+    if sd.get('show_extract_msg', False):
+        st.success("🎯 위치 추출 및 시트 자동 저장 완료!")
+        sd.show_extract_msg = False
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 수동 저장"):
@@ -192,8 +211,15 @@ with st.sidebar:
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             save_db(sd.df); sd.target_nm = f_nm
-            st.toast("🎉 데이터 수정 및 저장이 완벽하게 완료되었습니다!", icon="✅")
+            
+            # 🚩 [요청 1]: 저장 메시지 예약을 통해 버튼 바로 아래에 렌더링
+            sd.show_save_msg = True
             st.rerun()
+
+    # 버튼 바로 아래에 알림 렌더링
+    if sd.get('show_save_msg', False):
+        st.success("🎉 데이터가 성공적으로 저장되었습니다!")
+        sd.show_save_msg = False
 
     st.divider()
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
@@ -207,14 +233,7 @@ with st.sidebar:
     
     st.text_input("시설 이름", key="in_v_nm")
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
-    
-    st.text_area("주소 확인/수정", key="in_v_addr")
-    
-    # 🚩 [원클릭 복사 기능 완벽 구현]: st.code를 활용해 마우스 오버 시 복사 아이콘 활성화
-    st.caption("📋 클릭하여 주소 복사")
-    st.code(sd.in_v_addr if sd.in_v_addr else "주소가 없습니다", language="text")
-    st.caption("📍 현재 조준경 좌표 복사")
-    st.code(f"{sd.in_t_la}, {sd.in_t_lo}", language="text")
+    st.text_area("주소 확인/수정 (직접 수정 가능)", key="in_v_addr")
 
     if sd.m_mode == "데이터 삭제":
         curr_names = (sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg])['이름'].tolist()
@@ -250,7 +269,6 @@ for _, r in res_df.iterrows():
     if lat == 0.0: continue
     color = 'red' if r['구분'] == '송신소' else 'blue'
     
-    # 🚩 [팝업 데이터 버그 해결]: 세션이 아닌 무조건 원본 DataFrame 데이터를 바라보게 하여 증발 방지
     dtv_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
     uhd_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
     
