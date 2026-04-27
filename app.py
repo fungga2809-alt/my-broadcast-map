@@ -13,7 +13,7 @@ import time
 # 1. 페이지 설정
 st.set_page_config(page_title="Broadcasting Master v984", layout="wide")
 DB = 'stations.csv'
-# Secrets에서 주소를 정확히 읽어옵니다.
+# 🚩 Secrets에서 주소를 읽어옵니다.
 GS_URL = st.secrets.get("gsheets_url", "") 
 
 sd = st.session_state
@@ -49,29 +49,28 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [데이터 로드/저장] - 🔥 연동 에러 확인 로직 강화
+# [데이터 로드/저장]
 def load_db():
     df = pd.DataFrame(columns=CL, dtype=str)
     
-    # 구글 시트 연동 로드 시도
+    # 1. 구글 시트 연동 로드 시도
     if sd.get('gs_sync_on', False):
         if not GS_URL:
-            st.error("⚠️ Secrets 설정에서 gsheets_url 주소를 찾을 수 없습니다. (줄바꿈 확인 필요)")
+            st.error("⚠️ Secrets 설정에서 gsheets_url 주소를 읽지 못했습니다. (Secrets 저장 여부와 줄바꿈 확인 필요)")
         else:
             try:
-                # 전문가님의 환경에 최적화된 연결 방식
                 conn = st.connection("gsheets", type=GSheetsConnection)
-                # 🚩 spreadsheet 인자를 제거하여 Secrets 설정을 우선적으로 따릅니다.
-                df = conn.read(ttl=0).astype(str).fillna("") 
+                # 🚩 spreadsheet 인자를 제거하여 Secrets 설정을 우선 따르게 함
+                df = conn.read(ttl=0).astype(str).fillna("")
                 for s in SL:
                     df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
-                st.toast("🌐 구글 시트 데이터 로드 성공!")
+                st.success("🌐 구글 시트 연결 성공!")
                 return df
             except Exception as e:
-                # 🚩 실패 원인을 화면에 명확하게 표시합니다.
+                # 🚩 연동 실패 시 화면에 정확한 이유를 보여줍니다.
                 st.error(f"❌ 구글 시트 연결 실패: {e}")
     
-    # 실패 시 또는 OFF 시 로컬 로드
+    # 2. 로컬 CSV 로드 (실패 시 또는 OFF 상태일 때)
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         df['이름'] = df['이름'].str.strip()
@@ -81,14 +80,11 @@ def load_db():
     except: return pd.DataFrame(columns=CL, dtype=str)
 
 def save_db(df):
-    # 1. 로컬 저장
     df.to_csv(DB, index=False, encoding='utf-8-sig')
-    
-    # 2. 구글 시트 저장
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
-            conn.update(spreadsheet=GS_URL, data=df)
+            conn.update(data=df)
             st.sidebar.success("✅ 로컬 및 구글 시트 저장 성공!")
             time.sleep(2)
         except Exception as e:
@@ -96,6 +92,7 @@ def save_db(df):
     else:
         st.toast("💾 로컬 stations.csv 저장 완료!")
 
+# [통합 검색 및 정렬 엔진]
 def get_filtered_sorted_df(df, sel_reg, search_query):
     res = df if sel_reg == "전체" else df[df['지역'] == sel_reg]
     if search_query:
@@ -142,6 +139,7 @@ if 'main_table' in sd:
         else: sd.target_nm, sd.m_mode = None, "신규 등록"
         sd.map_key += 1; st.rerun()
 
+# CSS 스타일
 st.markdown("""<style>
     html, body, [class*="css"] { font-size: 18px !important; }
     [data-testid="stSidebar"] { background-color: #ced4da !important; }
@@ -152,16 +150,13 @@ st.markdown("""<style>
     [data-testid="stDataFrame"] td, [data-testid="stDataFrame"] th { font-size: 26px !important; height: 45px !important; }
 </style>""", unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# 사이드바
-# ---------------------------------------------------------
+# 사이드바 구성
 with st.sidebar:
     st.header("⚙️ 관제 설정")
     old_sync = sd.gs_sync_on
     sd.gs_sync_on = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if old_sync != sd.gs_sync_on:
-        sd.df = load_db()
-        st.rerun()
+        sd.df = load_db(); st.rerun()
 
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], index=["일반", "위성", "위성+이름"].index(sd.map_layer), horizontal=True)
     st.divider()
@@ -191,8 +186,7 @@ with st.sidebar:
             loc = Nominatim(user_agent="b_v984").reverse(f"{p[0]}, {p[1]}", timeout=3)
             if loc: sd.in_v_addr = loc.address
         except: pass
-        sd.map_key += 1 
-        st.toast("🎯 마커 이동 완료!"); st.rerun()
+        sd.map_key += 1; st.toast("🎯 마커 이동 완료!"); st.rerun()
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 저장"):
@@ -205,14 +199,13 @@ with st.sidebar:
                 sd.target_nm = f_nm
             else: 
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            save_db(sd.df); st.rerun()
+            save_db(sd.df); sd.prev_sel = []; st.rerun()
 
     st.divider()
     m_opts = ["신규 등록", "정보 수정", "데이터 삭제"]
     sd.m_mode = st.radio("🛠️ 작업 모드", m_opts, index=m_opts.index(sd.m_mode), horizontal=True)
 
-    st.divider()
-    st.markdown("### 📝 시설 정보 입력")
+    st.divider(); st.markdown("### 📝 시설 정보 입력")
     if sd.m_mode == "신규 등록":
         reg_options = ["+ 새 지역 추가"] + regs
         st.selectbox("지역 선택", reg_options, key="in_reg_box")
@@ -239,9 +232,7 @@ with st.sidebar:
         for i, s in enumerate(list_ch):
             with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed")
 
-# ---------------------------------------------------------
-# 본문: 지도
-# ---------------------------------------------------------
+# 지도 본문
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 disp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
@@ -257,40 +248,17 @@ for _, r in disp_df.iterrows():
     lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if is_t else (safe_float(r['위도']), safe_float(r['경도']))
     if lat == 0.0: continue
     color = 'red' if r['구분'] == '송신소' else 'blue'
-    dtv_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_DTV])
-    uhd_list = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {r[s]}</span></div>" for s in SL_UHD])
-    p_html = f"<div style='width:350px; font-size:15px;'><div style='font-size:20px; font-weight:bold;'>[{r['구분']}] {r['이름']}</div><div>{r['주소']}</div><div style='display:flex; justify-content:space-between;'><div style='width:48%;'>{dtv_list}</div><div style='width:48%; color:#007bff;'>{uhd_list}</div></div></div>"
+    p_html = f"<div style='width:350px;'><b>[{r['구분']}] {r['이름']}</b><br>{r['주소']}</div>"
     folium.Marker([lat, lon], icon=folium.Icon(color=color, icon='tower-broadcast', prefix='fa'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
 
-st_folium(m, use_container_width=True, height=1000, key=f"map_{sd.map_key}")
+st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
 
-# ---------------------------------------------------------
-# 📊 데이터 현황
-# ---------------------------------------------------------
 st.subheader("📊 데이터 현황")
 if not disp_df.empty:
     view_df = disp_df.copy()
     view_df['구글어스 좌표'] = view_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
     def style_row(row):
         bg = '#fff0f0' if row['구분']=='송신소' else '#f0f7ff'
-        fg = '#cc0000' if row['구분']=='송신소' else '#0066cc'
-        return [f"background-color: {bg}; color: {fg}; font-weight: bold; font-size: 26px; border-bottom: 1px solid #ccc;" for _ in row]
+        return [f"background-color: {bg}; font-size: 26px; font-weight: bold; border-bottom: 1px solid #ccc;" for _ in row]
     styled = view_df[CL + ['구글어스 좌표']].style.apply(style_row, axis=1)
     st.dataframe(styled, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
-
-    st.divider()
-    c1, c2 = st.columns(2)
-    with c1: st.download_button("📥 CSV 다운로드", data=disp_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
-    with c2: st.download_button("🌍 KML 다운로드", data=generate_kml(disp_df), file_name='stations.kml', use_container_width=True)
-
-st.divider()
-st.markdown("#### 📤 수정한 CSV 파일 즉시 적용 (덮어쓰기)")
-uploaded_file = st.file_uploader("", type=['csv'], label_visibility="collapsed")
-if uploaded_file is not None:
-    if st.button("🔄 업로드한 파일로 즉시 데이터 덮어쓰기"):
-        try:
-            new_df = pd.read_csv(uploaded_file, dtype=str).fillna("")
-            if '이름' in new_df.columns:
-                sd.df = new_df
-                save_db(sd.df); st.rerun()
-        except Exception as e: st.error(f"오류: {e}")
