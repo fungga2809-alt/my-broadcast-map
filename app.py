@@ -8,9 +8,9 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정 및 가로 꽉 참 설정
-st.set_page_config(page_title="Broadcasting Master v985.3", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v985.4", layout="wide")
 
-# [V984 디자인 CSS 복구]
+# [V984 디자인 CSS]
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; padding-top: 1rem !important; max-width: 100% !important; }
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -47,16 +47,18 @@ SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL = SL_DTV + SL_UHD
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [데이터 로직]
+# 🚩 [데이터 동기화 로직 강화]
 def load_db():
     if sd.get('gs_sync_on', False) and GS_URL:
         try:
+            st.cache_data.clear() # 묵은 캐시 강제 삭제
             conn = st.connection("gsheets", type=GSheetsConnection)
             df = conn.read(spreadsheet=GS_URL, ttl=0).astype(str).fillna("")
             for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True).replace('nan', '')
-            st.toast("🌐 구글 시트 동기화 완료")
+            st.toast("🌐 구글 시트 최신 데이터 동기화 완료!")
             return df
-        except: pass
+        except Exception as e:
+            st.error(f"❌ 구글 시트를 불러오지 못해 로컬 데이터로 대체합니다: {e}")
     try:
         df = pd.read_csv(DB, dtype=str).fillna("")
         for s in SL: df[s] = df[s].str.replace(r'\.0$', '', regex=True)
@@ -70,8 +72,8 @@ def save_db(df):
             conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(spreadsheet=GS_URL, data=df)
             st.cache_data.clear()
-            st.sidebar.success("✅ 저장 완료!")
-        except Exception as e: st.error(f"시트 동기화 실패: {e}")
+            st.sidebar.success("✅ 구글 시트 및 로컬 저장 완료!")
+        except Exception as e: st.error(f"❌ 시트 저장 실패: {e}")
     else: st.toast("💾 로컬 CSV 업데이트 완료!")
 
 def get_filtered_sorted_df(df, sel_reg, search_query):
@@ -89,7 +91,7 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 # [세션 초기화]
 defaults = {
     'df': load_db(), 'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 2000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 3000,
     'm_mode': "신규 등록", 'target_nm': None,
     'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 'in_reg_direct': "", 'in_v_cat': "송신소",
     'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': []
@@ -99,7 +101,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# 🛠️ [원클릭 수정/삭제 오류 해결]: 선택이 실제로 변했을 때만 모드를 강제 변경
+# [원클릭 표 선택]
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
     idx = sd.main_table["selection"]["rows"][0]
     if sd.prev_sel != [idx]:
@@ -124,7 +126,19 @@ with st.sidebar:
             sd.df = pd.read_csv(uploaded_file, dtype=str).fillna("")
             save_db(sd.df); st.rerun()
 
-    sd.gs_sync_on = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
+    # 🚩 [추가된 기능]: 실시간 연동 토글 및 수동 새로고침 버튼
+    sync_toggle = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
+    if sync_toggle != sd.gs_sync_on:
+        sd.gs_sync_on = sync_toggle
+        st.cache_data.clear()
+        sd.df = load_db(); st.rerun()
+        
+    if sd.gs_sync_on:
+        if st.button("🔄 시트 최신 데이터 불러오기"):
+            st.cache_data.clear()
+            sd.df = load_db()
+            st.rerun()
+
     sd.map_layer = st.radio("🗺️ 레이어", ["일반", "위성", "위성+이름"], horizontal=True)
     st.divider()
     
@@ -162,7 +176,6 @@ with st.sidebar:
             save_db(sd.df); st.rerun()
 
     st.divider()
-    # 🛠️ [원클릭 모드 전환]: 작업 모드 라디오 버튼
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
 
     st.divider(); st.markdown("### 📝 시설 정보 입력")
@@ -175,7 +188,6 @@ with st.sidebar:
     st.text_input("시설 이름", key="in_v_nm")
     st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
     
-    # 🚩 [주소 복사 기능 추가]
     st.text_area("주소 확인/수정", key="in_v_addr")
     st.caption("📋 클릭하여 주소 복사 (아래 칸 클릭)")
     st.code(sd.in_v_addr, language="text")
@@ -215,7 +227,6 @@ for _, r in res_df.iterrows():
     if lat == 0.0: continue
     color = 'red' if r['구분'] == '송신소' else 'blue'
     
-    # 🚩 [팝업 디자인 원상복구]
     dtv_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>: {sd.get(f'ch_{s}', r[s]) if is_t else r[s]}</span></div>" for s in SL_DTV])
     uhd_tags = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; color:#007bff;'><span><b>{s}</b></span><span>: {sd.get(f'ch_{s}', r[s]) if is_t else r[s]}</span></div>" for s in SL_UHD])
     
@@ -249,10 +260,10 @@ if not res_df.empty:
 
     st.divider()
     c1, c2 = st.columns(2)
-    with c1: st.download_button("📥 stations.csv 저장", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
+    with c1: st.download_button("📥 현재 리스트 CSV 저장", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
     with c2: 
         kml_str = f'<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
         for _, r in res_df.iterrows():
             kml_str += f"<Placemark><name>[{r['구분']}] {r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>"
         kml_str += "</Document></kml>"
-        st.download_button("🌍 stations.kml 저장", data=kml_str, file_name='stations.kml', use_container_width=True)
+        st.download_button("🌍 구글어스용 KML 저장", data=kml_str, file_name='stations.kml', use_container_width=True)
