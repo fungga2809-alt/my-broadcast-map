@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1000", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1001", layout="wide")
 
 # [디자인 CSS]
 st.markdown("""<style>
@@ -62,7 +62,6 @@ def load_db():
             return df
         except: pass
     try:
-        # 🚩 읽을 때도 utf-8-sig 적용
         df = pd.read_csv(DB, dtype=str, encoding='utf-8-sig').fillna("")
         for s in SL: 
             if s in df.columns: df[s] = df[s].str.replace(r'\.0$', '', regex=True)
@@ -70,7 +69,6 @@ def load_db():
     except: return pd.DataFrame(columns=CL, dtype=str)
 
 def save_db(df):
-    # 🚩 [핵심] 엑셀에서 안 깨지도록 utf-8-sig로 저장
     df.to_csv(DB, index=False, encoding='utf-8-sig') 
     if sd.get('gs_sync_on', False):
         try:
@@ -97,8 +95,8 @@ if 'df' not in sd: sd.df = load_db()
 map_options = ["일반", "위성", "위성+이름"]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 55000,
-    'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "전체", 
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 60000,
+    'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "+ 새 지역 추가", 
     'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
     'in_v_addr': "", 'prev_sel': [], 
     'msg_save': False, 'msg_extract': False
@@ -128,12 +126,6 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
 with st.sidebar:
     st.header("⚙️ 관제 설정")
     
-    # 🚩 [알림 영역] 새로고침 후에도 유지되도록 설계
-    if sd.msg_save:
-        st.success("✅ 데이터 수정/저장이 완료되었습니다!"); sd.msg_save = False
-    if sd.msg_extract:
-        st.info("🎯 위치 정보 자동 업데이트 완료!"); sd.msg_extract = False
-
     sync_toggle = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if sync_toggle != sd.gs_sync_on:
         sd.gs_sync_on = sync_toggle
@@ -183,10 +175,19 @@ with st.sidebar:
             sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             save_db(sd.df); sd.map_key += 1; sd.msg_extract = True; st.rerun()
 
+    # 🚩 [팝업 이동]: 수정 위치 추출 버튼 바로 아래
+    if sd.msg_extract:
+        st.info("🎯 위치/주소 정보가 추출 및 저장되었습니다!"); sd.msg_extract = False
+
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 수정 저장"):
         f_nm = sd.in_v_nm
-        f_reg = sd.in_reg_direct if sd.in_reg_box == "+ 새 지역 추가" else sd.in_reg_box
+        # 🚩 [로직 수정]: 정보 수정 시에는 무조건 입력된 지역 명칭(in_reg_direct)을 따르도록 하여 부산 미반영 버그 해결
+        if sd.m_mode == "신규 등록":
+            f_reg = sd.in_reg_direct if sd.in_reg_box == "+ 새 지역 추가" else sd.in_reg_box
+        else:
+            f_reg = sd.in_reg_direct
+
         if f_nm and f_reg:
             v = [f_reg, sd.in_v_cat, f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
             if sd.m_mode == "정보 수정" and sd.target_nm:
@@ -194,6 +195,10 @@ with st.sidebar:
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             save_db(sd.df); sd.target_nm = f_nm; sd.msg_save = True; st.rerun()
+
+    # 🚩 [팝업 이동]: 데이터 수정 저장 버튼 바로 아래
+    if sd.msg_save:
+        st.success("✅ 데이터 수정 및 시트 업데이트가 완료되었습니다!"); sd.msg_save = False
 
     st.divider()
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
@@ -283,11 +288,7 @@ if not res_df.empty:
     
     st.divider()
     c1, c2 = st.columns(2)
-    with c1:
-        # 🚩 CSV 다운로드 시 한글 깨짐 방지(utf-8-sig) 적용
-        csv_data = res_df.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button("📥 현재 리스트 CSV 저장", data=csv_data, file_name="stations.csv", use_container_width=True)
-        st.caption("💾 CSV를 받으면 엑셀에서 바로 한글 확인이 가능합니다.")
+    with c1: st.download_button("📥 현재 리스트 CSV 저장", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
     with c2: 
         kml_str = '<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
         for _, r in res_df.iterrows():
