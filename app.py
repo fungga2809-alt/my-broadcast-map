@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1002", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1003", layout="wide")
 
 # [디자인 CSS]
 st.markdown("""<style>
@@ -91,11 +91,11 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 
 if 'df' not in sd: sd.df = load_db()
 
-# [기본 설정]
+# [기본 설정 초기화]
 map_options = ["일반", "위성", "위성+이름"]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 70000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 80000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "전체", 
     'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
     'in_v_addr': "", 'prev_sel': [], 'msg_save': False, 'msg_extract': False
@@ -105,9 +105,10 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [원클릭 표 선택]
+# [원클릭 표 선택 - UI 데이터 로드 핵심 로직]
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
     idx = sd.main_table["selection"]["rows"][0]
+    # 🚩 '저장 후 즉시 반영'을 위해 sd.prev_sel이 비워져 있다면 다시 로드하도록 설계됨
     if sd.prev_sel != [idx]:
         sd.prev_sel = [idx]
         temp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
@@ -125,7 +126,6 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
 with st.sidebar:
     st.header("⚙️ 관제 설정")
     
-    # 🚩 [복구]: 구글 시트 연동 영역
     gs_toggle = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if gs_toggle != sd.gs_sync_on:
         sd.gs_sync_on = gs_toggle
@@ -179,18 +179,13 @@ with st.sidebar:
             sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             save_db(sd.df); sd.map_key += 1; sd.msg_extract = True; st.rerun()
 
-    # 🚩 [팝업 이동]: 위치 추출 버튼 아래
     if sd.msg_extract:
-        st.info("🎯 위치 정보 자동 업데이트 완료!"); sd.msg_extract = False
+        st.info("🎯 위치/주소 정보 자동 업데이트 완료!"); sd.msg_extract = False
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 수정 저장"):
         f_nm = sd.in_v_nm
-        # 🚩 [로직 교정]: 수정 모드일 때는 무조건 입력된 지역 명칭을 사용하여 '부산' 미반영 버그 해결
-        if sd.m_mode == "정보 수정":
-            f_reg = sd.in_reg_direct
-        else:
-            f_reg = sd.in_reg_direct if sd.in_reg_box == "+ 새 지역 추가" else sd.in_reg_box
+        f_reg = sd.in_reg_direct # 수정 모드 시 직접 입력된 지역명 우선 사용
 
         if f_nm and f_reg:
             v = [f_reg, sd.in_v_cat, f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
@@ -198,9 +193,16 @@ with st.sidebar:
                 sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            save_db(sd.df); sd.target_nm = f_nm; sd.msg_save = True; st.rerun()
+            
+            save_db(sd.df); 
+            sd.target_nm = f_nm; 
+            sd.msg_save = True;
+            
+            # 🚩 [해결책]: 저장 후 '이전 선택 기억'을 비워버립니다. 
+            # 이렇게 하면 rerun 이후 상단의 표 선택 로직이 최신 데이터를 다시 로드합니다.
+            sd.prev_sel = [] 
+            st.rerun()
 
-    # 🚩 [팝업 이동]: 수정 저장 버튼 아래
     if sd.msg_save:
         st.success("✅ 데이터 수정 및 시트 저장이 완료되었습니다!"); sd.msg_save = False
 
