@@ -8,9 +8,9 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v996", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v997", layout="wide")
 
-# [디자인 CSS]
+# [V984 오리지널 디자인 CSS 유지]
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; padding-top: 1rem !important; max-width: 100% !important; }
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -95,7 +95,7 @@ if 'df' not in sd: sd.df = load_db()
 map_options = ["일반", "위성", "위성+이름"]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 30000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 35000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "전체", 
     'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
     'in_v_addr': "", 'prev_sel': [], 'show_save_msg': False, 'show_extract_msg': False
@@ -105,7 +105,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [원클릭 표 선택]
+# [원클릭 표 선택 연동]
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
     idx = sd.main_table["selection"]["rows"][0]
     if sd.prev_sel != [idx]:
@@ -134,6 +134,7 @@ with st.sidebar:
         if st.button("🔄 시트 최신 데이터 불러오기"):
             st.cache_data.clear(); sd.df = load_db(); st.rerun()
 
+    # 🚩 [기본 레이어 고정]: sd.map_layer 값을 인덱스로 사용하여 위성지도로 시작
     sd.map_layer = st.radio("🗺️ 레이어", map_options, index=map_options.index(sd.map_layer), horizontal=True)
     st.divider()
     
@@ -141,17 +142,18 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 통합 검색", placeholder="시설명, 지역, 채널번호 등")
 
+    # [복사 칸 상단 배치]
     st.caption("📋 클릭하여 주소 복사")
     st.code(sd.in_v_addr if sd.in_v_addr else "주소 정보 없음", language="text")
     st.caption("📍 현재 좌표 복사")
     st.code(f"{sd.in_t_la}, {sd.in_t_lo}", language="text")
 
-    # 🚩 [복원 1]: 내 위치 찾기 및 초기화 버튼
-    c1, c2 = st.columns(2)
-    with c1:
+    # 🚩 [복원]: 내 위치 찾기 및 초기화 버튼
+    col_loc, col_rst = st.columns(2)
+    with col_loc:
         if st.button("📍 내 위치 찾기"):
-            sd.map_key += 1; st.rerun() # st_folium의 내 위치 기능을 활용하거나 초기 좌표로 이동
-    with c2:
+            sd.map_key += 1; st.rerun() 
+    with col_rst:
         if st.button("🔄 입력 초기화"):
             sd.m_mode, sd.target_nm = "신규 등록", None
             sd.in_v_nm, sd.in_reg_direct, sd.in_v_addr = "", "", ""
@@ -237,8 +239,8 @@ l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
 tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='Google')
 
-# [지도 내 내 위치 버튼 활성화]
-folium.plugins.LocateControl(auto_start=False).add_to(m) if hasattr(folium.plugins, 'LocateControl') else None
+# [지도 내 GPS 버튼]
+folium.plugins.LocateControl(auto_start=False).add_to(m)
 
 cross_html = MacroElement()
 cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.crosshair::before, .crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.crosshair::before { top: 18px; left: -10px; width: 60px; height: 4px; }.crosshair::after { left: 18px; top: -10px; height: 60px; width: 4px; }</style><div class="crosshair"></div>{% endmacro %}""")
