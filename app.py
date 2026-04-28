@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1009", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1010", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -95,7 +95,7 @@ if 'df' not in sd: sd.df = load_db()
 # [기본 설정 초기화]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 140000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 150000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
     'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
     'prev_sel': [], 'msg_save': False, 'msg_extract': False
@@ -124,7 +124,6 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
 # --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 관제 설정")
-    
     gs_toggle = st.toggle("🌐 클라우드 실시간 연동", value=sd.gs_sync_on)
     if gs_toggle != sd.gs_sync_on:
         sd.gs_sync_on = gs_toggle
@@ -165,7 +164,7 @@ with st.sidebar:
         if sd.m_mode == "정보 수정" and sd.target_nm:
             v = [sd.in_reg_direct, sd.in_v_cat, sd.target_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
             sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
-            save_db(sd.df); sd.msg_extract = True
+            save_db(sd.df); sd.map_key += 1; sd.msg_extract = True
         sd.map_key += 1; st.rerun()
     
     if sd.msg_extract: st.info("🎯 위치 정보 자동 업데이트 완료!"); sd.msg_extract = False
@@ -190,8 +189,6 @@ with st.sidebar:
     with t1:
         st.radio("작업 모드", ["신규", "수정", "삭제"], key="m_mode_tab", horizontal=True, label_visibility="collapsed")
         sd.m_mode = {"신규": "신규 등록", "수정": "정보 수정", "삭제": "데이터 삭제"}[st.session_state.m_mode_tab]
-        
-        # 🚩 [해결]: 삭제 버튼 로직 추가
         if sd.m_mode == "데이터 삭제":
             st.warning(f"🚨 현재 선택된 '{sd.target_nm}' 시설을 삭제합니까?")
             st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
@@ -201,7 +198,6 @@ with st.sidebar:
                     save_db(sd.df); sd.target_nm = None
                     st.toast("🗑️ 삭제 완료", icon="✅")
                     time.sleep(0.5); st.rerun()
-        
         st.text_input("지역", key="in_reg_direct")
         st.text_input("시설명", key="in_v_nm")
         st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
@@ -230,18 +226,16 @@ with st.sidebar:
 st.title(f"📡 {sd.sel_reg} 통합 방송 관제 시스템")
 res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
-# 지도
 l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
 tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='Google')
 folium.plugins.LocateControl(auto_start=False).add_to(m)
 
-# 조준경
 cross_html = MacroElement()
 cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.crosshair::before, .crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.crosshair::before { top: 18px; left: -10px; width: 60px; height: 4px; }.crosshair::after { left: 18px; top: -10px; height: 60px; width: 4px; }</style><div class="crosshair"></div>{% endmacro %}""")
 m.get_root().add_child(cross_html)
 
-# 🚩 [해결]: 마커 팝업 디자인 예전 버전(분리형)으로 복구
+# 마커 팝업 (DMB/FM 접힘 상태 유지)
 for _, r in res_df.iterrows():
     lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if sd.target_nm == r['이름'] else (safe_float(r['위도']), safe_float(r['경도']))
     if lat == 0.0: continue
@@ -251,6 +245,7 @@ for _, r in res_df.iterrows():
     dmb_h = "".join([f"<div style='display:flex; justify-content:space-between; border-bottom:1px dashed #eee; padding:2px 0;'><span><b>{s.split('(')[1][:-1]}</b></span><b>{r.get(s, '')}</b></div>" for s in SL_DMB if r.get(s, '')])
     fm_h = "".join([f"<div style='display:flex; justify-content:space-between; border-bottom:1px dashed #eee; padding:2px 0;'><span>{s}</span><b>{r.get(s, '')} MHz</b></div>" for s in SL_FM if r.get(s, '')])
     
+    # 🚩 [핵심 수정]: details 태그에서 'open' 속성 제거
     p_html = f"""<div style='width:350px; font-family:sans-serif; font-size:14px;'>
         <div style='font-size:18px; font-weight:bold; border-bottom:2px solid #333; padding-bottom:5px; margin-bottom:8px;'>
             [{r['구분']}] <span style='background-color:#ffff00; padding:2px 5px;'>{r['이름']}</span>
@@ -260,11 +255,11 @@ for _, r in res_df.iterrows():
             <div style='width:48%;'><b>📡 DTV</b>{dtv_h}</div>
             <div style='width:48%; border-left:1px solid #ddd; padding-left:10px;'><b>✨ UHD</b>{uhd_h}</div>
         </div>
-        <details style='cursor:pointer; background:#f0f7ff; padding:5px; border-radius:5px; margin-bottom:5px;' open>
+        <details style='cursor:pointer; background:#f0f7ff; padding:5px; border-radius:5px; margin-bottom:5px;'>
             <summary style='font-weight:bold; color:#0066cc;'>📱 DMB 채널</summary>
             <div style='margin-top:8px; font-size:12px;'>{dmb_h if dmb_h else '제원 없음'}</div>
         </details>
-        <details style='cursor:pointer; background:#eee; padding:5px; border-radius:5px;' open>
+        <details style='cursor:pointer; background:#eee; padding:5px; border-radius:5px;'>
             <summary style='font-weight:bold; color:#333;'>📻 FM 라디오</summary>
             <div style='margin-top:8px; font-size:12px;'>{fm_h if fm_h else '제원 없음'}</div>
         </details>
@@ -274,7 +269,7 @@ for _, r in res_df.iterrows():
 map_res = st_folium(m, use_container_width=True, height=900, key=f"map_{sd.map_key}")
 if map_res and map_res.get("center"): sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
-# 데이터 테이블 및 🚩 [해결]: 반출 기능 버튼 복구
+# 데이터 테이블 및 반출 기능
 st.subheader("📊 전국 방송 시설 데이터 현황")
 if not res_df.empty:
     view_df = res_df[['지역', '구분', '이름', '위도', '경도', '주소']].copy()
@@ -283,8 +278,7 @@ if not res_df.empty:
     
     st.divider()
     c1, c2 = st.columns(2)
-    with c1:
-        st.download_button("📥 현재 리스트 CSV 저장 (Excel용)", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations_master.csv", use_container_width=True)
+    with c1: st.download_button("📥 현재 리스트 CSV 저장 (Excel용)", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations_master.csv", use_container_width=True)
     with c2:
         kml_str = '<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
         for _, r in res_df.iterrows():
