@@ -8,9 +8,9 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v997", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v998", layout="wide")
 
-# [V984 오리지널 디자인 CSS 유지]
+# [디자인 CSS]
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; padding-top: 1rem !important; max-width: 100% !important; }
     html, body, [class*="css"] { font-size: 18px !important; }
@@ -95,10 +95,11 @@ if 'df' not in sd: sd.df = load_db()
 map_options = ["일반", "위성", "위성+이름"]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 35000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 40000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "전체", 
     'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
-    'in_v_addr': "", 'prev_sel': [], 'show_save_msg': False, 'show_extract_msg': False
+    'in_v_addr': "", 'prev_sel': [], 
+    'show_save_msg': False, 'show_extract_msg': False, 'show_dl_msg': False
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -124,17 +125,21 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
 # --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 관제 설정")
+    
+    # 🚩 최상단 알림 영역
+    if sd.get('show_save_msg', False):
+        st.success("✅ 데이터 수정/저장이 완료되었습니다!")
+        sd.show_save_msg = False
+    if sd.get('show_extract_msg', False):
+        st.info("🎯 위치 정보가 자동 업데이트 되었습니다!")
+        sd.show_extract_msg = False
+
     sync_toggle = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if sync_toggle != sd.gs_sync_on:
         sd.gs_sync_on = sync_toggle
         if sd.gs_sync_on: sd.df = load_db()
         st.rerun()
         
-    if sd.gs_sync_on:
-        if st.button("🔄 시트 최신 데이터 불러오기"):
-            st.cache_data.clear(); sd.df = load_db(); st.rerun()
-
-    # 🚩 [기본 레이어 고정]: sd.map_layer 값을 인덱스로 사용하여 위성지도로 시작
     sd.map_layer = st.radio("🗺️ 레이어", map_options, index=map_options.index(sd.map_layer), horizontal=True)
     st.divider()
     
@@ -142,17 +147,14 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 통합 검색", placeholder="시설명, 지역, 채널번호 등")
 
-    # [복사 칸 상단 배치]
     st.caption("📋 클릭하여 주소 복사")
     st.code(sd.in_v_addr if sd.in_v_addr else "주소 정보 없음", language="text")
     st.caption("📍 현재 좌표 복사")
     st.code(f"{sd.in_t_la}, {sd.in_t_lo}", language="text")
 
-    # 🚩 [복원]: 내 위치 찾기 및 초기화 버튼
     col_loc, col_rst = st.columns(2)
     with col_loc:
-        if st.button("📍 내 위치 찾기"):
-            sd.map_key += 1; st.rerun() 
+        if st.button("📍 내 위치 찾기"): sd.map_key += 1; st.rerun() 
     with col_rst:
         if st.button("🔄 입력 초기화"):
             sd.m_mode, sd.target_nm = "신규 등록", None
@@ -181,11 +183,9 @@ with st.sidebar:
             sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             save_db(sd.df); sd.map_key += 1; sd.show_extract_msg = True; st.rerun()
 
-    if sd.get('show_extract_msg', False):
-        st.success("🎯 위치 및 제원 자동 저장 완료!"); sd.show_extract_msg = False
-
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
-    if st.button("✅ 데이터 수동 저장"):
+    # 전문가님 요청에 따른 명칭 변경: "데이터 수정 저장"
+    if st.button("✅ 데이터 수정 저장"):
         f_nm = sd.in_v_nm
         f_reg = sd.in_reg_direct if sd.in_reg_box == "+ 새 지역 추가" else sd.in_reg_box
         if f_nm and f_reg:
@@ -195,9 +195,6 @@ with st.sidebar:
             else:
                 sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
             save_db(sd.df); sd.target_nm = f_nm; sd.show_save_msg = True; st.rerun()
-
-    if sd.get('show_save_msg', False):
-        st.success("🎉 데이터가 성공적으로 저장되었습니다!"); sd.show_save_msg = False
 
     st.divider()
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
@@ -210,10 +207,8 @@ with st.sidebar:
             st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
             if st.button("🚨 시설 영구 삭제 실행"):
                 sd.df = sd.df[sd.df['이름'] != del_t]
-                save_db(sd.df); sd.target_nm = None
-                st.toast(f"🗑️ {del_t} 시설이 삭제되었습니다.", icon="✅")
+                save_db(sd.df); sd.target_nm = None; st.toast(f"🗑️ {del_t} 삭제 완료", icon="✅")
                 time.sleep(0.5); st.rerun()
-    
     else:
         st.divider(); st.markdown("### 📝 시설 정보 입력")
         if sd.m_mode == "신규 등록":
@@ -233,13 +228,17 @@ with st.sidebar:
 
 # --- 메인 화면 ---
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
+
+# CSV/KML 다운로드 관련 알림 표시
+if sd.get('show_dl_msg', False):
+    st.toast("📥 파일 생성이 시작되었습니다. 브라우저 하단을 확인하세요!", icon="💾")
+    sd.show_dl_msg = False
+
 res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
 l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
 tile_url = f'https://mt1.google.com/vt/lyrs={l_map[sd.map_layer]}&hl=ko&x={{x}}&y={{y}}&z={{z}}'
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr='Google')
-
-# [지도 내 GPS 버튼]
 folium.plugins.LocateControl(auto_start=False).add_to(m)
 
 cross_html = MacroElement()
@@ -281,7 +280,7 @@ map_res = st_folium(m, use_container_width=True, height=950, key=f"map_{sd.map_k
 if map_res and map_res.get("center"):
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
-# [데이터 현황 및 다운로드]
+# [데이터 현황]
 st.subheader("📊 데이터 현황 (기본 위치 정보)")
 if not res_df.empty:
     view_df = res_df[['지역', '구분', '이름', '위도', '경도', '주소']].copy()
@@ -291,10 +290,14 @@ if not res_df.empty:
     
     st.divider()
     c1, c2 = st.columns(2)
-    with c1: st.download_button("📥 현재 리스트 CSV 저장", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
+    with c1:
+        # CSV 다운로드 버튼 (알림을 위해 클릭 시 sd.show_dl_msg 설정)
+        if st.download_button("📥 현재 리스트 CSV 저장", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True):
+             sd.show_dl_msg = True
     with c2: 
         kml_str = '<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
         for _, r in res_df.iterrows():
             kml_str += f"<Placemark><name>[{r['구분']}] {r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>"
         kml_str += "</Document></kml>"
-        st.download_button("🌍 구글어스용 KML 저장", data=kml_str, file_name="stations.kml", use_container_width=True)
+        if st.download_button("🌍 구글어스용 KML 저장", data=kml_str, file_name="stations.kml", use_container_width=True):
+             sd.show_dl_msg = True
