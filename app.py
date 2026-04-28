@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v993", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v994", layout="wide")
 
 # [디자인 CSS]
 st.markdown("""<style>
@@ -91,10 +91,10 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 
 if 'df' not in sd: sd.df = load_db()
 
-# [기본 지도 설정: 위성+이름 고정]
+# [기본 설정: 위성+이름 고정]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 25000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 26000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "전체", 
     'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
     'in_v_addr': "", 'prev_sel': [], 'show_save_msg': False, 'show_extract_msg': False
@@ -140,6 +140,7 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 통합 검색", placeholder="시설명, 지역, 채널번호 등")
 
+    # [복사 칸 상단 배치 유지]
     st.caption("📋 클릭하여 주소 복사")
     st.code(sd.in_v_addr if sd.in_v_addr else "주소 정보 없음", language="text")
     st.caption("📍 현재 좌표 복사")
@@ -150,6 +151,7 @@ with st.sidebar:
     if st.button("🎯 신규 위치 추출"):
         sd.m_mode, sd.target_nm = "신규 등록", None
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center
+        sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]]
         try:
             loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
             if loc: sd.in_v_addr = loc.address
@@ -160,6 +162,7 @@ with st.sidebar:
     if st.button("🎯 수정 위치 추출"):
         if sd.target_nm:
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
+            sd.base_center = [sd.crosshair_center[0], sd.crosshair_center[1]]
             v = [sd.in_reg_direct, sd.in_v_cat, sd.target_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
             sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             save_db(sd.df); sd.map_key += 1; sd.show_extract_msg = True; st.rerun()
@@ -185,22 +188,37 @@ with st.sidebar:
     st.divider()
     sd.m_mode = st.radio("🛠️ 작업 모드", ["신규 등록", "정보 수정", "데이터 삭제"], horizontal=True)
 
-    st.divider(); st.markdown("### 📝 시설 정보 입력")
-    if sd.m_mode == "신규 등록":
-        st.selectbox("지역 선택", ["+ 새 지역 추가"] + regs, key="in_reg_box")
-        if sd.in_reg_box == "+ 새 지역 추가": st.text_input("새 지역 명칭 입력", key="in_reg_direct")
-    else: st.text_input("지역 이름 수정", key="in_reg_direct")
-    st.text_input("시설 이름", key="in_v_nm")
-    st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
-    st.text_area("주소 확인/수정", key="in_v_addr")
+    # 🚩 [핵심 복구]: 데이터 삭제 UI 로직
+    if sd.m_mode == "데이터 삭제":
+        st.divider(); st.markdown("### 🗑️ 시설 삭제 관리")
+        curr_names = (sd.df if sd.sel_reg == "전체" else sd.df[sd.df['지역'] == sd.sel_reg])['이름'].tolist()
+        if curr_names:
+            del_t = st.selectbox("삭제할 시설 선택", curr_names)
+            st.markdown('<span class="btn-red"></span>', unsafe_allow_html=True)
+            if st.button("🚨 시설 영구 삭제 실행"):
+                sd.df = sd.df[sd.df['이름'] != del_t]
+                save_db(sd.df); sd.target_nm = None
+                st.toast(f"🗑️ {del_t} 시설이 삭제되었습니다.", icon="✅")
+                time.sleep(0.5); st.rerun()
+        else:
+            st.warning("현재 필터링된 지역에 삭제할 데이터가 없습니다.")
+    
+    else:
+        st.divider(); st.markdown("### 📝 시설 정보 입력")
+        if sd.m_mode == "신규 등록":
+            st.selectbox("지역 선택", ["+ 새 지역 추가"] + regs, key="in_reg_box")
+            if sd.in_reg_box == "+ 새 지역 추가": st.text_input("새 지역 명칭 입력", key="in_reg_direct")
+        else: st.text_input("지역 이름 수정", key="in_reg_direct")
+        st.text_input("시설 이름", key="in_v_nm")
+        st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
+        st.text_area("주소 확인/수정", key="in_v_addr")
 
-    # 🚩 [UI 수정]: DMB/FM 입력칸 라벨 노출
-    with st.expander("📡 상세 채널(TV/DMB/FM) 설정"):
-        for section, list_ch in [("📺 DTV", SL_DTV), ("✨ UHD", SL_UHD), ("📱 DMB", SL_DMB), ("📻 FM Radio", SL_FM)]:
-            st.markdown(f"**{section}**")
-            cols = st.columns(3)
-            for i, s in enumerate(list_ch):
-                with cols[i % 3]: st.text_input(s, key=f"ch_{s}", placeholder="채널/주파수")
+        with st.expander("📡 상세 채널(TV/DMB/FM) 설정"):
+            for section, list_ch in [("📺 DTV", SL_DTV), ("✨ UHD", SL_UHD), ("📱 DMB", SL_DMB), ("📻 FM Radio", SL_FM)]:
+                st.markdown(f"**{section}**")
+                cols = st.columns(3)
+                for i, s in enumerate(list_ch):
+                    with cols[i % 3]: st.text_input(s, key=f"ch_{s}", placeholder="채널/주파수")
 
 # --- 메인 화면 ---
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
@@ -248,7 +266,7 @@ map_res = st_folium(m, use_container_width=True, height=950, key=f"map_{sd.map_k
 if map_res and map_res.get("center"):
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
-# 🚩 [다운로드 버튼 복구]
+# 🚩 [다운로드 버튼 복구 유지]
 st.subheader("📊 데이터 현황 (기본 위치 정보)")
 if not res_df.empty:
     view_df = res_df[['지역', '구분', '이름', '위도', '경도', '주소']].copy()
