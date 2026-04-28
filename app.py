@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v999", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1000", layout="wide")
 
 # [디자인 CSS]
 st.markdown("""<style>
@@ -62,7 +62,7 @@ def load_db():
             return df
         except: pass
     try:
-        # 🚩 한글 깨짐 방지를 위해 utf-8-sig로 읽기 시도
+        # 🚩 읽을 때도 utf-8-sig 적용
         df = pd.read_csv(DB, dtype=str, encoding='utf-8-sig').fillna("")
         for s in SL: 
             if s in df.columns: df[s] = df[s].str.replace(r'\.0$', '', regex=True)
@@ -70,7 +70,7 @@ def load_db():
     except: return pd.DataFrame(columns=CL, dtype=str)
 
 def save_db(df):
-    # 🚩 [중요] 엑셀에서 한글 안 깨지게 utf-8-sig로 저장
+    # 🚩 [핵심] 엑셀에서 안 깨지도록 utf-8-sig로 저장
     df.to_csv(DB, index=False, encoding='utf-8-sig') 
     if sd.get('gs_sync_on', False):
         try:
@@ -93,15 +93,15 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 
 if 'df' not in sd: sd.df = load_db()
 
-# [기본 설정]
+# [기본 설정 초기화]
 map_options = ["일반", "위성", "위성+이름"]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 50000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 55000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "전체", 
     'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
     'in_v_addr': "", 'prev_sel': [], 
-    'msg_save': False, 'msg_extract': False, 'msg_dl': False
+    'msg_save': False, 'msg_extract': False
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -132,7 +132,7 @@ with st.sidebar:
     if sd.msg_save:
         st.success("✅ 데이터 수정/저장이 완료되었습니다!"); sd.msg_save = False
     if sd.msg_extract:
-        st.info("🎯 위치/주소 정보 자동 업데이트 완료!"); sd.msg_extract = False
+        st.info("🎯 위치 정보 자동 업데이트 완료!"); sd.msg_extract = False
 
     sync_toggle = st.toggle("🌐 구글 시트 실시간 연동", value=sd.gs_sync_on)
     if sync_toggle != sd.gs_sync_on:
@@ -227,12 +227,6 @@ with st.sidebar:
 
 # --- 메인 화면 ---
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
-
-# 🚩 다운로드 진행 안내 (토스트)
-if sd.msg_dl:
-    st.toast("💾 파일 생성이 완료되었습니다. 브라우저의 다운로드함을 확인하세요!", icon="📥")
-    sd.msg_dl = False
-
 res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
 l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
@@ -292,12 +286,11 @@ if not res_df.empty:
     with c1:
         # 🚩 CSV 다운로드 시 한글 깨짐 방지(utf-8-sig) 적용
         csv_data = res_df.to_csv(index=False, encoding='utf-8-sig')
-        if st.download_button("📥 현재 리스트 CSV 저장", data=csv_data, file_name="stations.csv", use_container_width=True):
-             sd.msg_dl = True # 알림 예약
+        st.download_button("📥 현재 리스트 CSV 저장", data=csv_data, file_name="stations.csv", use_container_width=True)
+        st.caption("💾 CSV를 받으면 엑셀에서 바로 한글 확인이 가능합니다.")
     with c2: 
         kml_str = '<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
         for _, r in res_df.iterrows():
             kml_str += f"<Placemark><name>[{r['구분']}] {r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>"
         kml_str += "</Document></kml>"
-        if st.download_button("🌍 구글어스용 KML 저장", data=kml_str, file_name="stations.kml", use_container_width=True):
-             sd.msg_dl = True # 알림 예약
+        st.download_button("🌍 구글어스용 KML 저장", data=kml_str, file_name="stations.kml", use_container_width=True)
