@@ -7,8 +7,8 @@ from branca.element import Template, MacroElement
 from streamlit_gsheets import GSheetsConnection 
 import time
 
-# 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v992.1", layout="wide")
+# 1. 페이지 설정 및 가로 꽉 참 설정
+st.set_page_config(page_title="Broadcasting Master v992.2", layout="wide")
 
 # [V984 오리지널 디자인 CSS]
 st.markdown("""<style>
@@ -91,10 +91,10 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 
 if 'df' not in sd: sd.df = load_db()
 
-# 🚩 [설정 변경]: 기본 지도를 "위성+이름"으로 고정했습니다.
+# [설정]: 기본 지도를 "위성+이름"으로 고정
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 23000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 24000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_box': "전체", 
     'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 
     'in_v_addr': "", 'prev_sel': [], 'show_save_msg': False, 'show_extract_msg': False
@@ -140,6 +140,7 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 통합 검색", placeholder="시설명, 지역, 채널번호 등")
 
+    # [V989 스타일: 복사 기능을 검색창 바로 아래 배치]
     st.caption("📋 클릭하여 주소 복사")
     st.code(sd.in_v_addr if sd.in_v_addr else "주소 정보 없음", language="text")
     st.caption("📍 현재 좌표 복사")
@@ -197,13 +198,15 @@ with st.sidebar:
     st.text_area("주소 확인/수정", key="in_v_addr")
 
     with st.expander("📡 상세 채널(TV/DMB/FM) 설정"):
+        # 🚩 [UI 개선]: DMB 칸의 라벨을 밖으로 꺼내고 명확하게 표시
         for section, list_ch in [("📺 DTV", SL_DTV), ("✨ UHD", SL_UHD), ("📱 DMB", SL_DMB), ("📻 FM Radio", SL_FM)]:
             st.markdown(f"**{section}**")
             cols = st.columns(3)
             for i, s in enumerate(list_ch):
-                with cols[i % 3]: st.text_input(s, key=f"ch_{s}", label_visibility="collapsed", placeholder=s)
+                # 라벨 노출 (label_visibility="visible")
+                with cols[i % 3]: st.text_input(s, key=f"ch_{s}", placeholder="채널/주파수")
 
-# --- 메인 화면 ---
+# --- 메인 화면 (지도 높이 950px) ---
 st.title(f"📡 {sd.sel_reg} 방송 관제 센터")
 res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
@@ -220,7 +223,7 @@ for _, r in res_df.iterrows():
     if lat == 0.0: continue
     color = 'red' if r['구분'] == '송신소' else 'blue'
     
-    # 🚩 [KeyError 방지 로직]: 데이터에 컬럼이 없을 경우를 대비해 'get' 방식으로 안전하게 읽어옵니다.
+    # 🚩 [KeyError 방지]: r.get() 사용하여 안전하게 데이터 표시
     dtv_h = "".join([f"<div style='display:flex; justify-content:space-between;'><span><b>{s}</b></span><span>{r.get(s, '')}</span></div>" for s in SL_DTV])
     uhd_h = "".join([f"<div style='display:flex; justify-content:space-between; color:#007bff;'><span><b>{s}</b></span><span>{r.get(s, '')}</span></div>" for s in SL_UHD])
     dmb_h = "".join([f"<div style='display:flex; justify-content:space-between; border-bottom:1px dashed #eee; padding:2px 0;'><span><b>{s.split('(')[1][:-1]}</b></span><b>{r.get(s, '')}</b></div>" for s in SL_DMB if r.get(s, '')])
@@ -250,9 +253,32 @@ map_res = st_folium(m, use_container_width=True, height=950, key=f"map_{sd.map_k
 if map_res and map_res.get("center"):
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
+# 🚩 [다운로드 버튼 복구]: 데이터 현황 아래에 버튼 배치
 st.subheader("📊 데이터 현황 (기본 위치 정보)")
 if not res_df.empty:
     view_df = res_df[['지역', '구분', '이름', '위도', '경도', '주소']].copy()
     view_df['구글어스 좌표'] = res_df.apply(lambda x: get_google_format(x['위도'], x['경도']), axis=1)
     styled = view_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'}; font-weight: bold; border-bottom: 1px solid #ccc;" for _ in row], axis=1)
     st.dataframe(styled, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+    
+    st.divider()
+    # CSV / KML 다운로드 버튼
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button(
+            label="📥 현재 리스트 CSV 저장",
+            data=res_df.to_csv(index=False, encoding='utf-8-sig'),
+            file_name="stations_export.csv",
+            use_container_width=True
+        )
+    with c2:
+        kml_str = '<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+        for _, r in res_df.iterrows():
+            kml_str += f"<Placemark><name>[{r['구분']}] {r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>"
+        kml_str += "</Document></kml>"
+        st.download_button(
+            label="🌍 구글어스용 KML 저장",
+            data=kml_str,
+            file_name="stations.kml",
+            use_container_width=True
+        )
