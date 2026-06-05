@@ -10,7 +10,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1011", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1012", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -35,8 +35,11 @@ SL = SL_DTV + SL_UHD + SL_DMB + SL_FM
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
 # [기술 분석 도구함]
+def safe_float(val, default=0.0):
+    try: return float(val) if val and str(val).strip() != "" else default
+    except: return default
+
 def calculate_bearing(lat1, lon1, lat2, lon2):
-    """두 지점 간의 방위각 계산"""
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     delta_lambda = math.radians(lon2 - lon1)
     y = math.sin(delta_lambda) * math.cos(phi2)
@@ -55,7 +58,7 @@ def get_google_format(lat, lon):
         return f"{to_dms(lat, True)} {to_dms(lon, False)}"
     except: return ""
 
-# [데이터 로드/저장 로직 - 기존 동일]
+# [데이터 로드/저장 로직]
 def load_db():
     if sd.get('gs_sync_on', False):
         try:
@@ -129,7 +132,6 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
 with st.sidebar:
     st.header("⚙️ 관제 및 분석")
     
-    # 🌐 클라우드 연동
     gs_toggle = st.toggle("🌐 클라우드 실시간 연동", value=sd.gs_sync_on)
     if gs_toggle != sd.gs_sync_on:
         sd.gs_sync_on = gs_toggle
@@ -138,16 +140,13 @@ with st.sidebar:
 
     st.divider()
     
-    # 🚩 [해결]: 특수 지도 레이어(지형도) 추가
     sd.map_layer = st.radio("🗺️ 지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
-    
     regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 통합 검색", placeholder="시설명, 채널 등")
 
     st.divider()
 
-    # 🚩 [해결]: 기술 분석 도구 (시설 ↔ 조준경)
     if sd.target_nm:
         st.subheader("📡 실시간 기술 분석")
         with st.container():
@@ -164,7 +163,21 @@ with st.sidebar:
 
     st.divider()
 
-    # 📍 유틸리티 및 추출
+    st.caption("📋 주소 복사")
+    st.code(sd.in_v_addr if sd.in_v_addr else "주소 정보 없음", language="text")
+    st.caption("🌍 DMS 좌표 복사")
+    st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language="text")
+
+    c_loc, c_rst = st.columns(2)
+    with c_loc:
+        if st.button("📍 내 위치 이동"): sd.map_key += 1; st.rerun() 
+    with c_rst:
+        if st.button("🔄 입력창 비우기"):
+            sd.m_mode, sd.target_nm = "신규 등록", None
+            sd.in_v_nm, sd.in_reg_direct, sd.in_v_addr = "", "", ""
+            for s in SL: sd[f"ch_{s}"] = ""
+            st.rerun()
+
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 조준경 위치 추출"):
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center
@@ -177,6 +190,8 @@ with st.sidebar:
             sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
             save_db(sd.df); sd.msg_extract = True
         sd.map_key += 1; st.rerun()
+    
+    if sd.msg_extract: st.info("🎯 위치 정보 자동 업데이트 완료!"); sd.msg_extract = False
 
     st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
     if st.button("✅ 데이터 통합 저장"):
@@ -190,8 +205,7 @@ with st.sidebar:
             save_db(sd.df); sd.target_nm = f_nm; sd.msg_save = True; sd.prev_sel = []; st.rerun()
 
     st.divider()
-    
-    # 4단 탭 시스템 (상세 제원)
+    st.subheader("📝 상세 제원 관리")
     t1, t2, t3, t4 = st.tabs(["기본", "TV", "DMB", "FM"])
     with t1:
         st.radio("작업 모드", ["신규", "수정", "삭제"], key="m_mode_tab", horizontal=True, label_visibility="collapsed")
@@ -223,7 +237,7 @@ with st.sidebar:
             with cols[i % 2]: st.text_input(s, key=f"ch_{s}")
 
 # --- 메인 화면 ---
-st.title(f"📡 {sd.sel_reg} 통합 방송 관제 시스템 v1011")
+st.title(f"📡 {sd.sel_reg} 통합 방송 관제 시스템")
 res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
 # 지도 설정
@@ -238,12 +252,12 @@ else:
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
 folium.plugins.LocateControl(auto_start=False).add_to(m)
 
-# 조준경 및 마커 (v1010 팝업 디자인 유지)
 cross_html = MacroElement()
 cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.crosshair::before, .crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.crosshair::before { top: 18px; left: -10px; width: 60px; height: 4px; }.crosshair::after { left: 18px; top: -10px; height: 60px; width: 4px; }</style><div class="crosshair"></div>{% endmacro %}""")
 m.get_root().add_child(cross_html)
 
 for _, r in res_df.iterrows():
+    # 🚩 [핵심 수정]: safe_float 오타를 완벽하게 교정하여 NameError 해결
     lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if sd.target_nm == r['이름'] else (safe_float(r['위도']), safe_float(r['경도']))
     if lat == 0.0: continue
     
@@ -264,14 +278,14 @@ for _, r in res_df.iterrows():
     </div>"""
     folium.Marker([lat, lon], icon=folium.Icon(color='red' if r['구분'] == '송신소' else 'blue'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
 
-map_res = st_folium(m, use_container_width=True, height=850, key=f"map_{sd.map_key}")
+map_res = st_folium(m, use_container_width=True, height=900, key=f"map_{sd.map_key}")
 if map_res and map_res.get("center"): sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
 # [데이터 현황 및 반출]
 st.subheader("📊 전국 방송 시설 데이터 현황")
 if not res_df.empty:
     view_df = res_df[['지역', '구분', '이름', '위도', '경도', '주소']].copy()
-    st.dataframe(view_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+    st.dataframe(view_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'}; font-weight: bold; border-bottom: 1px solid #ccc;" for _ in row], axis=1), use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
     c1, c2 = st.columns(2)
     with c1: st.download_button("📥 CSV 저장 (Excel용)", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
     with c2: st.download_button("🌍 KML 저장", data='<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>' + "".join([f"<Placemark><name>{r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>" for _, r in res_df.iterrows()]) + "</Document></kml>", file_name="stations.kml", use_container_width=True)
