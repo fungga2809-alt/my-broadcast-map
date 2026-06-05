@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1023", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1024", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -21,7 +21,7 @@ st.markdown("""<style>
     [data-testid="stSidebar"] div.stButton button, [data-testid="stSidebar"] button[kind="secondaryFormSubmit"] { width: 100% !important; height: 42px !important; border-radius: 8px !important; font-weight: bold !important; }
     .analysis-box { background-color: #ffffff; border: 1px solid #ced4da; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #1971c2 !important; color: white !important; }
-    div.element-container:has(.btn-green) + div.element-container button { background-color: #2f9e44 !important; color: white !important; }
+    div.element-container:has(.btn-green) + div.element-container button { background-color: #2f9e44 !important; color: white !important; font-size: 18px !important; }
 </style>""", unsafe_allow_html=True)
 
 sd = st.session_state
@@ -89,12 +89,12 @@ def generate_popup_html(r):
 
 defaults = {
     'gs_sync_on': True, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 260000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 270000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
     'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
     'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "",
     'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
-    'show_coverage': False, 'cov_radius': 10, 'show_los': True # 🚩 신규 기능 기본값
+    'show_coverage': False, 'cov_radius': 10, 'show_los': True 
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -159,18 +159,18 @@ if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
 
 # --- 사이드바 ---
 with st.sidebar:
-    st.header("⚙️ 관제 및 분석")
+    st.header("⚙️ 관제 데스크")
     
+    # ---------------------------------------------------------
+    # PART 1. 시스템 설정 및 위치 탐색 (고정 영역)
+    # ---------------------------------------------------------
     gs_toggle = st.toggle("🌐 클라우드 실시간 연동", value=sd.gs_sync_on)
     if gs_toggle != sd.gs_sync_on:
-        sd.gs_sync_on = gs_toggle
-        if sd.gs_sync_on: sd.df = load_db()
+        sd.gs_sync_on = gs_toggle; if sd.gs_sync_on: sd.df = load_db()
         st.rerun()
 
-    st.divider()
     sd.map_layer = st.radio("🗺️ 지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
     
-    # 🚩 [추가 기능 2]: 커버리지 반경 시각화 설정
     c_tog, c_sld = st.columns([1, 1])
     with c_tog: sd.show_coverage = st.toggle("⭕ 예상 커버리지", value=sd.show_coverage)
     with c_sld: 
@@ -180,13 +180,10 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 내 장부 통합 검색", placeholder="저장된 시설명, 채널 등")
 
-    st.divider()
-    st.markdown("**🌍 원하는 위치로 지도 이동** (엔터키 가능)")
-    st.markdown("""<div style='background-color: #e7f5ff; border-left: 4px solid #228be6; padding: 12px; border-radius: 4px; color: #1864ab; font-size: 13.5px; margin-bottom: 12px; line-height: 1.5;'>💡 <b>Pro Tip:</b> 오픈소스 지도 특성상 상세 주소 검색이 안 될 수 있습니다.<br><b>구글 지도나 구글 어스의 좌표(위도, 경도)</b>를 복사해 붙여넣으시면 가장 빠르고 정확합니다!</div>""", unsafe_allow_html=True)
-    
+    st.markdown("**🌍 원하는 위치로 지도 이동**")
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
-        with c_jmp: jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="좌표 입력 (예: 35.17, 129.07)", label_visibility="collapsed")
+        with c_jmp: jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="좌표 또는 주소 입력", label_visibility="collapsed")
         with c_btn: jump_submit = st.form_submit_button("이동", use_container_width=True)
             
         if jump_submit and jump_q:
@@ -195,70 +192,28 @@ with st.sidebar:
                 sd.base_center = [lat_lon[0], lat_lon[1]]; sd.crosshair_center = [lat_lon[0], lat_lon[1]]
                 sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
             else:
-                geolocator = Nominatim(user_agent="b_master")
-                loc = None
+                geolocator = Nominatim(user_agent="b_master"); loc = None
                 try:
                     loc = geolocator.geocode(jump_q)
                     if not loc:
                         q_nospace = re.sub(r'([가-힣]+)\s+(\d+[가-힣]+)', r'\1\2', jump_q)
                         if q_nospace != jump_q: loc = geolocator.geocode(q_nospace)
                     if not loc and " " in jump_q:
-                        q_nobuilding = " ".join(jump_q.split()[:-1])
-                        loc = geolocator.geocode(q_nobuilding)
-                        if loc: st.toast(f"상세 번지수를 찾지 못해 '{q_nobuilding}' 근처로 이동합니다.", icon="ℹ️")
+                        q_nobuilding = " ".join(jump_q.split()[:-1]); loc = geolocator.geocode(q_nobuilding)
                     if loc:
                         sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]
                         sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
-                    else: st.toast("검색 실패! 구글지도에서 좌표를 복사해서 넣어주세요.", icon="❌")
-                except: st.toast("지도 네트워크 오류입니다. 좌표를 입력해 주세요.", icon="⚠️")
+                    else: st.toast("검색 실패! 좌표를 복사해서 넣어주세요.", icon="❌")
+                except: st.toast("지도 네트워크 오류입니다.", icon="⚠️")
 
     st.divider()
+
+    # ---------------------------------------------------------
+    # 🚩 PART 2. 메인 작업 영역: 데이터 제원 관리 (동선 최적화)
+    # ---------------------------------------------------------
+    st.subheader("📝 시설 제원 관리")
     
-    # 🚩 [추가 기능 1]: RF 가시선(LOS) 및 프레넬 존 고도화 분석
-    if sd.target_nm:
-        st.subheader("📡 실시간 RF 기술 분석")
-        with st.container():
-            st.markdown(f"<div class='analysis-box'><b>대상:</b> {sd.target_nm} ↔ <b>조준경(수신지)</b></div>", unsafe_allow_html=True)
-            dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
-            bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
-            
-            c1, c2 = st.columns(2)
-            c1.metric("직선 거리", f"{dist_km:.2f} km")
-            c2.metric("방위각 (안테나 방향)", f"{bear:.1f}°")
-            
-            if dist_km > 0.1:
-                # RF 공학 공식: 중심점 프레넬 존 반경(R) & 지구 곡률 가림고(H)
-                # DTV 대역 평균 500MHz(0.5GHz) 가정
-                fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
-                earth_bulge = (dist_km * dist_km) / 50.96 # K-Factor 4/3 적용 (약 17 * 4)
-                
-                st.markdown("**⛰️ 가시선(LOS) 여유고 분석**")
-                c3, c4 = st.columns(2)
-                c3.caption(f"제1 프레넬 존 반경\n\n**{fresnel_r:.1f} m**")
-                c4.caption(f"중심점 지구 곡률\n\n**{earth_bulge:.1f} m**")
-                
-                # 단면도 2D 면적 그래프 생성
-                dist_pts = [dist_km * i / 20 for i in range(21)]
-                bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
-                chart_df = pd.DataFrame({'거리(km)': dist_pts, '지구 곡률 가림고(m)': bulge_pts}).set_index('거리(km)')
-                st.area_chart(chart_df, color="#ced4da", height=150)
-                
-                sd.show_los = st.checkbox("지도에 LOS 라인 표시", value=sd.show_los)
-                
-            st.caption("📍 조준경 위치 DMS 좌표")
-            st.code(get_google_format(sd.crosshair_center[0], sd.crosshair_center[1]), language="text")
-
-    st.divider()
-
-    # 🚩 [추가 기능 3]: MATV 물리 채널 ↔ 주파수 즉시 변환기
-    with st.expander("🧮 물리 채널 ↔ 주파수 변환기 (DTV)", expanded=False):
-        st.caption("헤드엔드/증폭기 세팅 시 중심 주파수 확인용")
-        ch_input = st.number_input("물리 채널 번호 (14~69)", min_value=14, max_value=69, value=14, step=1)
-        freq_mhz = 473 + (ch_input - 14) * 6
-        st.success(f"CH {ch_input} ➜ **{freq_mhz} MHz**")
-
-    st.divider()
-
+    # [버튼부 1] 초기화 및 추출 (상단 배치)
     c_loc, c_rst = st.columns(2)
     with c_loc:
         if st.button("📍 내 위치 이동"): sd.map_key += 1; st.rerun() 
@@ -271,9 +226,8 @@ with st.sidebar:
             st.rerun()
 
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
-    if st.button("🎯 조준경 위치 추출"):
-        sd.in_t_la, sd.in_t_lo = sd.crosshair_center
-        sd.base_center = [sd.in_t_la, sd.in_t_lo]
+    if st.button("🎯 1. 조준경 위치 추출"):
+        sd.in_t_la, sd.in_t_lo = sd.crosshair_center; sd.base_center = [sd.in_t_la, sd.in_t_lo]
         try:
             loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
             if loc: sd.in_v_addr = loc.address
@@ -282,27 +236,16 @@ with st.sidebar:
             sd.temp_active = True; sd.temp_lat, sd.temp_lon = sd.crosshair_center; sd.msg_extract = True
         elif sd.m_mode == "정보 수정" and sd.target_nm:
             v = [sd.in_reg_direct, sd.in_v_cat, sd.target_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
-            sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
-            save_db(sd.df); sd.msg_extract = True
+            sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v; save_db(sd.df); sd.msg_extract = True
         sd.map_key += 1; st.rerun()
     
     if sd.msg_extract: 
-        if sd.m_mode == "신규 등록": st.info("🎯 임시 마커 생성! 상세 정보를 입력하고 저장하세요."); 
+        if sd.m_mode == "신규 등록": st.info("🎯 임시 마커 생성! 아래 제원을 입력하고 저장하세요."); 
         else: st.info("🎯 위치 정보 자동 업데이트 완료!"); 
         sd.msg_extract = False
 
-    st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
-    if st.button("✅ 데이터 통합 저장"):
-        f_nm, f_reg = sd.in_v_nm, sd.in_reg_direct
-        if f_nm and f_reg:
-            v = [f_reg, sd.in_v_cat, f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
-            if sd.m_mode == "정보 수정" and sd.target_nm: sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
-            else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
-            save_db(sd.df); sd.target_nm = f_nm; sd.msg_save = True; sd.prev_sel = []; sd.temp_active = False; st.rerun()
-
-    st.divider()
-    st.subheader("📝 상세 제원 관리")
-    t1, t2, t3, t4 = st.tabs(["기본", "TV", "DMB", "FM"])
+    # [입력부] 제원 탭
+    t1, t2, t3, t4 = st.tabs(["2. 기본", "TV", "DMB", "FM"])
     with t1:
         st.radio("작업 모드", ["신규", "수정", "삭제"], key="m_mode_tab", horizontal=True, label_visibility="collapsed")
         sd.m_mode = {"신규": "신규 등록", "수정": "정보 수정", "삭제": "데이터 삭제"}[st.session_state.m_mode_tab]
@@ -317,19 +260,67 @@ with st.sidebar:
     with t2:
         c1, c2 = st.columns(2)
         with c1: 
-            st.markdown("**📺 DTV**")
-            for s in SL_DTV: st.text_input(s, key=f"ch_{s}")
+            st.markdown("**📺 DTV**"); for s in SL_DTV: st.text_input(s, key=f"ch_{s}")
         with c2:
-            st.markdown("**✨ UHD**")
-            for s in SL_UHD: st.text_input(s, key=f"ch_{s}")
+            st.markdown("**✨ UHD**"); for s in SL_UHD: st.text_input(s, key=f"ch_{s}")
     with t3:
-        st.markdown("**📱 DMB**")
-        for s in SL_DMB: st.text_input(s, key=f"ch_{s}")
+        st.markdown("**📱 DMB**"); for s in SL_DMB: st.text_input(s, key=f"ch_{s}")
     with t4:
         st.markdown("**📻 FM 라디오**")
         cols = st.columns(2)
         for i, s in enumerate(SL_FM):
             with cols[i % 2]: st.text_input(s, key=f"ch_{s}")
+
+    # [버튼부 2] 최종 저장 (탭 바로 아래 배치)
+    st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
+    if st.button("✅ 3. 데이터 통합 저장"):
+        f_nm, f_reg = sd.in_v_nm, sd.in_reg_direct
+        if f_nm and f_reg:
+            v = [f_reg, sd.in_v_cat, f_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
+            if sd.m_mode == "정보 수정" and sd.target_nm: sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
+            else: sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
+            save_db(sd.df); sd.target_nm = f_nm; sd.msg_save = True; sd.prev_sel = []; sd.temp_active = False; st.rerun()
+
+    st.divider()
+
+    # ---------------------------------------------------------
+    # 🚩 PART 3. 고급 분석 도구 (서랍장 형태로 숨김 처리)
+    # ---------------------------------------------------------
+    st.subheader("🛠️ 현장 기술 분석 도구")
+    
+    with st.expander("📡 RF 가시선(LOS) 분석기", expanded=False):
+        if sd.target_nm:
+            st.markdown(f"**대상:** {sd.target_nm} ↔ **현장(조준경)**")
+            dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
+            bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
+            
+            c1, c2 = st.columns(2)
+            c1.metric("직선 거리", f"{dist_km:.2f} km")
+            c2.metric("방위각", f"{bear:.1f}°")
+            
+            if dist_km > 0.1:
+                fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
+                earth_bulge = (dist_km * dist_km) / 50.96 
+                
+                c3, c4 = st.columns(2)
+                c3.caption(f"프레넬 반경: **{fresnel_r:.1f}m**")
+                c4.caption(f"지구 곡률: **{earth_bulge:.1f}m**")
+                
+                dist_pts = [dist_km * i / 20 for i in range(21)]
+                bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
+                chart_df = pd.DataFrame({'거리(km)': dist_pts, '가림고(m)': bulge_pts}).set_index('거리(km)')
+                st.area_chart(chart_df, color="#ced4da", height=150)
+                
+                sd.show_los = st.checkbox("지도에 빨간색 LOS 라인 긋기", value=sd.show_los)
+        else:
+            st.info("표에서 송신소를 선택하면 분석이 시작됩니다.")
+
+    with st.expander("🧮 물리 채널 ↔ 주파수 변환기", expanded=False):
+        st.caption("증폭기/헤드엔드 세팅 시 주파수 확인")
+        ch_input = st.number_input("채널 번호 (14~69)", min_value=14, max_value=69, value=14, step=1)
+        freq_mhz = 473 + (ch_input - 14) * 6
+        st.success(f"CH {ch_input} ➜ **{freq_mhz} MHz**")
+
 
 # --- 메인 화면 ---
 st.title(f"📡 {sd.sel_reg} 통합 방송 관제 시스템")
@@ -350,12 +341,10 @@ cross_html = MacroElement()
 cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid #ff4b4b; border-radius: 50%; z-index: 1000; pointer-events: none; }.crosshair::before, .crosshair::after { content: ''; position: absolute; background: #ff4b4b; }.crosshair::before { top: 18px; left: -10px; width: 60px; height: 4px; }.crosshair::after { left: 18px; top: -10px; height: 60px; width: 4px; }</style><div class="crosshair"></div>{% endmacro %}""")
 m.get_root().add_child(cross_html)
 
-# 🚩 [추가 기능 시각화]: 타겟 시설 렌더링 시 커버리지 및 LOS 라인 추가
 for _, r in res_df.iterrows():
     lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if sd.target_nm == r['이름'] else (safe_float(r['위도']), safe_float(r['경도']))
     if lat == 0.0: continue
     
-    # 목표 시설에 대한 시각화 처리
     if sd.target_nm == r['이름']:
         if sd.get('show_coverage'):
             folium.Circle(location=[lat, lon], radius=sd.cov_radius * 1000, color='#1864ab', fill=True, fill_color='#74c0fc', fill_opacity=0.2, tooltip=f"커버리지 ({sd.cov_radius}km)").add_to(m)
