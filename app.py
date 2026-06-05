@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1021", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1022", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -95,7 +95,7 @@ def generate_popup_html(r):
 defaults = {
     'gs_sync_on': True,
     'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 240000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 250000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
     'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
     'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "",
@@ -181,8 +181,13 @@ with st.sidebar:
     st.divider()
     st.markdown("**🌍 원하는 위치로 지도 이동** (엔터키 가능)")
     
-    # 🚩 [요청 반영]: 직관적인 안내 캡션 추가
-    st.caption("💡 *구글지도나 구글어스로 좌표 받아서 넣으세요*")
+    # 🚩 [UI/UX 고도화]: 세련되고 눈에 띄는 안내 문구 상자 적용
+    st.markdown("""
+    <div style='background-color: #e7f5ff; border-left: 4px solid #228be6; padding: 12px; border-radius: 4px; color: #1864ab; font-size: 13.5px; margin-bottom: 12px; line-height: 1.5;'>
+        💡 <b>Pro Tip:</b> 오픈소스 지도 특성상 상세 주소 검색이 안 될 수 있습니다.<br>
+        <b>구글 지도나 구글 어스의 좌표(위도, 경도)</b>를 복사해 붙여넣으시면 가장 빠르고 정확합니다!
+    </div>
+    """, unsafe_allow_html=True)
     
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
