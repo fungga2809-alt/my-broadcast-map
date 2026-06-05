@@ -10,7 +10,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1012", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1013", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -102,10 +102,10 @@ if 'df' not in sd: sd.df = load_db()
 # [기본 설정]
 defaults = {
     'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 160000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 170000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
     'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
-    'prev_sel': [], 'msg_save': False, 'msg_extract': False
+    'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': ""
 }
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
@@ -143,7 +143,33 @@ with st.sidebar:
     sd.map_layer = st.radio("🗺️ 지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
     regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
-    sd.ch_search = st.text_input("🔎 통합 검색", placeholder="시설명, 채널 등")
+    sd.ch_search = st.text_input("🔎 내 장부 통합 검색", placeholder="저장된 시설명, 채널 등")
+
+    st.divider()
+
+    # 🚩 [신규 기능]: 지도 공간 점프 전용 검색기
+    st.markdown("**🌍 원하는 위치로 지도 이동 (신규 등록 시 유용)**")
+    c_jmp, c_btn = st.columns([3, 1])
+    with c_jmp:
+        jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="주소 또는 '위도,경도'", label_visibility="collapsed")
+    with c_btn:
+        if st.button("이동", use_container_width=True):
+            if jump_q:
+                try:
+                    if ',' in jump_q: # 좌표 입력 시 (예: 35.179, 129.075)
+                        parts = jump_q.split(',')
+                        lat, lon = float(parts[0].strip()), float(parts[1].strip())
+                        sd.base_center = [lat, lon]; sd.crosshair_center = [lat, lon]
+                        sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
+                    else: # 주소 입력 시 (예: 부산시청)
+                        loc = Nominatim(user_agent="b_master").geocode(jump_q)
+                        if loc:
+                            sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]
+                            sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
+                        else:
+                            st.toast("해당 주소를 찾을 수 없습니다.", icon="❌")
+                except:
+                    st.toast("검색 오류. 좌표(위도,경도)나 정확한 주소를 입력하세요.", icon="⚠️")
 
     st.divider()
 
@@ -162,11 +188,6 @@ with st.sidebar:
             st.code(get_google_format(sd.crosshair_center[0], sd.crosshair_center[1]), language="text")
 
     st.divider()
-
-    st.caption("📋 주소 복사")
-    st.code(sd.in_v_addr if sd.in_v_addr else "주소 정보 없음", language="text")
-    st.caption("🌍 DMS 좌표 복사")
-    st.code(get_google_format(sd.in_t_la, sd.in_t_lo), language="text")
 
     c_loc, c_rst = st.columns(2)
     with c_loc:
@@ -257,7 +278,6 @@ cross_html._template = Template("""{% macro html(this, kwargs) %}<style>.crossha
 m.get_root().add_child(cross_html)
 
 for _, r in res_df.iterrows():
-    # 🚩 [핵심 수정]: safe_float 오타를 완벽하게 교정하여 NameError 해결
     lat, lon = (safe_float(sd.in_t_la), safe_float(sd.in_t_lo)) if sd.target_nm == r['이름'] else (safe_float(r['위도']), safe_float(r['경도']))
     if lat == 0.0: continue
     
@@ -278,7 +298,7 @@ for _, r in res_df.iterrows():
     </div>"""
     folium.Marker([lat, lon], icon=folium.Icon(color='red' if r['구분'] == '송신소' else 'blue'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
 
-map_res = st_folium(m, use_container_width=True, height=900, key=f"map_{sd.map_key}")
+map_res = st_folium(m, use_container_width=True, height=850, key=f"map_{sd.map_key}")
 if map_res and map_res.get("center"): sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
 # [데이터 현황 및 반출]
