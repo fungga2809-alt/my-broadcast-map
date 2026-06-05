@@ -283,4 +283,39 @@ for _, r in res_df.iterrows():
     
     dtv_h = "".join([f"<div style='display:flex; justify-content:space-between;'><span><b>{s}</b></span><span>{r.get(s, '')}</span></div>" for s in SL_DTV])
     uhd_h = "".join([f"<div style='display:flex; justify-content:space-between; color:#007bff;'><span><b>{s}</b></span><span>{r.get(s, '')}</span></div>" for s in SL_UHD])
-    dmb_h = "".join([f"<div
+    dmb_h = "".join([f"<div style='display:flex; justify-content:space-between;'><span><b>{s.split('(')[1][:-1]}</b></span><b>{r.get(s, '')}</b></div>" for s in SL_DMB if r.get(s, '')])
+    fm_h = "".join([f"<div style='display:flex; justify-content:space-between;'><span>{s}</span><b>{r.get(s, '')} MHz</b></div>" for s in SL_FM if r.get(s, '')])
+    
+    p_html = f"""<div style='width:350px; font-family:sans-serif; font-size:14px;'>
+        <div style='font-size:18px; font-weight:bold; border-bottom:2px solid #333; padding-bottom:5px; margin-bottom:8px;'>[{r['구분']}] {r['이름']}</div>
+        <div style='color:#666; margin-bottom:10px;'>{r['주소']}</div>
+        <div style='display:flex; justify-content:space-between; margin-bottom:10px;'>
+            <div style='width:48%;'><b>📡 DTV</b>{dtv_h}</div>
+            <div style='width:48%; border-left:1px solid #ddd; padding-left:10px;'><b>✨ UHD</b>{uhd_h}</div>
+        </div>
+        <details style='cursor:pointer; background:#f0f7ff; padding:5px; border-radius:5px; margin-bottom:5px;'><summary style='font-weight:bold;'>📱 DMB 채널</summary><div style='margin-top:8px;'>{dmb_h}</div></details>
+        <details style='cursor:pointer; background:#eee; padding:5px; border-radius:5px;'><summary style='font-weight:bold;'>📻 FM 라디오</summary><div style='margin-top:8px;'>{fm_h}</div></details>
+    </div>"""
+    folium.Marker([lat, lon], icon=folium.Icon(color='red' if r['구분'] == '송신소' else 'blue'), popup=folium.Popup(p_html, max_width=400)).add_to(m)
+
+# 🚩 [신규 기능]: 가승인(임시) 마커 그리기
+if sd.get('temp_active') and sd.m_mode == "신규 등록":
+    temp_html = """
+    <div style='width:220px; font-family:sans-serif; text-align:center;'>
+        <div style='font-size:16px; font-weight:bold; color:#7f8c8d; margin-bottom:5px;'>🚧 신규 등록 대기 중</div>
+        <div style='font-size:13px; color:#555;'>우측 메뉴에서 시설 제원을 입력하고<br><b>'✅ 데이터 통합 저장'</b>을 누르세요.</div>
+    </div>
+    """
+    folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign'), popup=folium.Popup(temp_html, max_width=250)).add_to(m)
+
+map_res = st_folium(m, use_container_width=True, height=850, key=f"map_{sd.map_key}")
+if map_res and map_res.get("center"): sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
+
+# [데이터 현황 및 반출]
+st.subheader("📊 전국 방송 시설 데이터 현황")
+if not res_df.empty:
+    view_df = res_df[['지역', '구분', '이름', '위도', '경도', '주소']].copy()
+    st.dataframe(view_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'}; font-weight: bold; border-bottom: 1px solid #ccc;" for _ in row], axis=1), use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
+    c1, c2 = st.columns(2)
+    with c1: st.download_button("📥 CSV 저장 (Excel용)", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
+    with c2: st.download_button("🌍 KML 저장", data='<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>' + "".join([f"<Placemark><name>{r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>" for _, r in res_df.iterrows()]) + "</Document></kml>", file_name="stations.kml", use_container_width=True)
