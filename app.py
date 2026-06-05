@@ -7,11 +7,11 @@ from geopy.distance import geodesic
 import math
 import re
 from branca.element import Template, MacroElement
-from streamlit_gsheets import GSheetsConnection 
+from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1029", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1030", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -26,7 +26,7 @@ st.markdown("""<style>
 sd = st.session_state
 DB = 'stations.csv'
 
-# [채널 목록]
+# [채널 및 컬럼 설정]
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -34,7 +34,7 @@ SL_FM = ['KBS1-FM', 'KBS2-FM', 'KBS-Music', 'MBC-FM', 'MBC-AM', 'KNN-FM', 'EBS-F
 SL = SL_DTV + SL_UHD + SL_DMB + SL_FM
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [도구함]
+# [RF 및 데이터 도구]
 def safe_float(val, default=0.0):
     try: return float(val) if val and str(val).strip() != "" else default
     except: return default
@@ -45,18 +45,6 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
     y = math.sin(delta_lambda) * math.cos(phi2)
     x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(delta_lambda)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
-
-def get_google_format(lat, lon):
-    try:
-        if not lat or not lon: return ""
-        def to_dms(deg, is_lat):
-            d = int(abs(float(deg)))
-            m = int((abs(float(deg)) - d) * 60)
-            s = round((abs(float(deg)) - d - m/60) * 3600, 2)
-            suffix = (("N" if float(deg) >= 0 else "S") if is_lat else ("E" if float(deg) >= 0 else "W"))
-            return f"{d}°{m}'{s}\"{suffix}"
-        return f"{to_dms(lat, True)} {to_dms(lon, False)}"
-    except: return ""
 
 def parse_coord_input(q):
     try:
@@ -93,6 +81,7 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
+# DB 로드/저장
 def load_db():
     if sd.get('gs_sync_on', False):
         try:
@@ -136,12 +125,7 @@ if 'df' not in sd: sd.df = load_db()
 # --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 관제 및 분석")
-    gs_toggle = st.toggle("🌐 클라우드 실시간 연동", value=sd.gs_sync_on)
-    if gs_toggle != sd.gs_sync_on:
-        sd.gs_sync_on = gs_toggle
-        if sd.gs_sync_on: sd.df = load_db()
-        st.rerun()
-
+    sd.gs_sync_on = st.toggle("🌐 클라우드 실시간 연동", value=sd.gs_sync_on)
     sd.map_layer = st.radio("🗺️ 지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
     c_tog, c_sld = st.columns([1, 1])
     with c_tog: sd.show_coverage = st.toggle("⭕ 예상 커버리지", value=sd.show_coverage)
@@ -152,41 +136,30 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 내 장부 통합 검색", placeholder="저장된 시설명, 채널 등")
 
-    st.markdown("**🌍 지도 공간 점프**")
     with st.form("jump_form", clear_on_submit=False):
-        jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="좌표 또는 주소", label_visibility="collapsed")
-        if st.form_submit_button("이동", use_container_width=True) and jump_q:
+        jump_q = st.text_input("🌍 공간 이동(좌표/주소 입력 후 엔터)", value=sd.map_jump_q)
+        if st.form_submit_button("지도 이동", use_container_width=True) and jump_q:
             lat_lon = parse_coord_input(jump_q)
             if lat_lon[0] is not None:
                 sd.base_center = [lat_lon[0], lat_lon[1]]; sd.crosshair_center = [lat_lon[0], lat_lon[1]]; sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
             else:
                 geolocator = Nominatim(user_agent="b_master"); loc = geolocator.geocode(jump_q)
-                if loc: sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]; sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
-                else: st.toast("검색 실패! 구글 좌표를 복사해서 넣어주세요.", icon="❌")
+                if loc: sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]; sd.map_key += 1; st.rerun()
+                else: st.toast("검색 실패!", icon="❌")
 
     st.subheader("📝 시설 제원 관리")
-    if st.button("📍 내 위치 이동"): sd.map_key += 1; st.rerun() 
-    if st.button("🔄 입력창 비우기"): sd.m_mode, sd.target_nm = "신규 등록", None; sd.temp_active = False; st.rerun()
-
+    if st.button("📍 조준경 위치로 이동"): sd.base_center = sd.crosshair_center; sd.map_key += 1; st.rerun()
+    
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 1. 조준경 위치 추출"):
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center; sd.base_center = [sd.in_t_la, sd.in_t_lo]
-        try:
-            loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
-            if loc: sd.in_v_addr = loc.address
-        except: pass
-        if sd.m_mode == "신규 등록": sd.temp_active = True; sd.temp_lat, sd.temp_lon = sd.crosshair_center; sd.msg_extract = True
-        elif sd.m_mode == "정보 수정" and sd.target_nm:
-            v = [sd.in_reg_direct, sd.in_v_cat, sd.target_nm] + [sd.get(f"ch_{s}", "") for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
-            sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v; save_db(sd.df); sd.msg_extract = True
+        if sd.m_mode == "신규 등록": sd.temp_active = True; sd.temp_lat, sd.temp_lon = sd.crosshair_center
         sd.map_key += 1; st.rerun()
 
     t1, t2, t3, t4 = st.tabs(["2. 기본", "TV", "DMB", "FM"])
     with t1:
-        st.radio("작업 모드", ["신규", "수정", "삭제"], key="m_mode_tab", horizontal=True, label_visibility="collapsed")
+        st.radio("작업", ["신규", "수정", "삭제"], key="m_mode_tab", horizontal=True, label_visibility="collapsed")
         sd.m_mode = {"신규": "신규 등록", "수정": "정보 수정", "삭제": "데이터 삭제"}[st.session_state.m_mode_tab]
-        if sd.m_mode == "데이터 삭제" and st.button("🚨 시설 영구 삭제"):
-            if sd.target_nm: sd.df = sd.df[sd.df['이름'] != sd.target_nm]; save_db(sd.df); sd.target_nm = None; st.rerun()
         st.text_input("지역", key="in_reg_direct"); st.text_input("시설명", key="in_v_nm"); st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True); st.text_area("주소", key="in_v_addr", height=70)
     with t2:
         c1, c2 = st.columns(2)
