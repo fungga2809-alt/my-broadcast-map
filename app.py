@@ -11,14 +11,14 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1018", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1019", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; padding-top: 1rem !important; max-width: 100% !important; }
     html, body, [class*="css"] { font-size: 16px !important; }
     [data-testid="stSidebar"] { background-color: #f1f3f5 !important; border-right: 1px solid #dee2e6 !important; }
-    [data-testid="stSidebar"] div.stButton button { width: 100% !important; height: 42px !important; border-radius: 8px !important; font-weight: bold !important; }
+    [data-testid="stSidebar"] div.stButton button, [data-testid="stSidebar"] button[kind="secondaryFormSubmit"] { width: 100% !important; height: 42px !important; border-radius: 8px !important; font-weight: bold !important; }
     .analysis-box { background-color: #ffffff; border: 1px solid #ced4da; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #1971c2 !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2f9e44 !important; color: white !important; }
@@ -92,11 +92,10 @@ def generate_popup_html(r):
         <details style='cursor:pointer; background:#eee; padding:5px; border-radius:5px;'><summary style='font-weight:bold;'>📻 FM 라디오</summary><div style='margin-top:8px;'>{fm_h if fm_h else '제원 없음'}</div></details>
     </div>"""
 
-# 🚩 [로직 최적화]: 앱 실행 시 기본값을 '먼저' 세팅하여 시트 동기화를 즉시 활성화
 defaults = {
-    'gs_sync_on': True, # 🌟 클라우드 실시간 연동 기본값 ON
+    'gs_sync_on': True,
     'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 210000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 220000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
     'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
     'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "",
@@ -107,7 +106,6 @@ for k, v in defaults.items():
 for s in SL:
     if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
-# [데이터 로드/저장 로직]
 def load_db():
     if sd.get('gs_sync_on', False):
         try:
@@ -148,7 +146,6 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 
 if 'df' not in sd: sd.df = load_db()
 
-# [표 선택 연동]
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
     idx = sd.main_table["selection"]["rows"][0]
     if sd.prev_sel != [idx]:
@@ -182,28 +179,32 @@ with st.sidebar:
     sd.ch_search = st.text_input("🔎 내 장부 통합 검색", placeholder="저장된 시설명, 채널 등")
 
     st.divider()
-    st.markdown("**🌍 원하는 위치로 지도 이동 (신규 등록 시 유용)**")
-    c_jmp, c_btn = st.columns([3, 1])
-    with c_jmp:
-        jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="주소 또는 '위도,경도'", label_visibility="collapsed")
-    with c_btn:
-        if st.button("이동", use_container_width=True):
-            if jump_q:
-                lat_lon = parse_coord_input(jump_q)
-                if lat_lon[0] is not None:
-                    sd.base_center = [lat_lon[0], lat_lon[1]]
-                    sd.crosshair_center = [lat_lon[0], lat_lon[1]]
-                    sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
-                else: 
-                    try:
-                        loc = Nominatim(user_agent="b_master").geocode(jump_q)
-                        if loc:
-                            sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]
-                            sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
-                        else:
-                            st.toast("해당 주소를 찾을 수 없습니다.", icon="❌")
-                    except:
-                        st.toast("네트워크 오류. 다시 시도해주세요.", icon="⚠️")
+    
+    # 🚩 [해결]: Form을 사용하여 Enter 키 입력 시에도 작동하도록 변경
+    st.markdown("**🌍 원하는 위치로 지도 이동 (신규 등록 시)**")
+    with st.form("jump_form", clear_on_submit=False):
+        c_jmp, c_btn = st.columns([3, 1])
+        with c_jmp:
+            jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="주소, 지역명 또는 좌표", label_visibility="collapsed")
+        with c_btn:
+            jump_submit = st.form_submit_button("이동", use_container_width=True)
+            
+        if jump_submit and jump_q:
+            lat_lon = parse_coord_input(jump_q)
+            if lat_lon[0] is not None: # 좌표로 인식된 경우
+                sd.base_center = [lat_lon[0], lat_lon[1]]
+                sd.crosshair_center = [lat_lon[0], lat_lon[1]]
+                sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
+            else: # 주소로 인식된 경우
+                try:
+                    loc = Nominatim(user_agent="b_master").geocode(jump_q)
+                    if loc:
+                        sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]
+                        sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
+                    else:
+                        st.toast("검색 실패! '양산시 금오16길'처럼 지역명을 꼭 포함해주시거나 좌표를 입력하세요.", icon="❌")
+                except:
+                    st.toast("네트워크 오류. 다시 시도해주세요.", icon="⚠️")
 
     st.divider()
     if sd.target_nm:
@@ -339,7 +340,6 @@ if sd.get('temp_active') and sd.m_mode == "신규 등록":
 map_res = st_folium(m, use_container_width=True, height=850, key=f"map_{sd.map_key}")
 if map_res and map_res.get("center"): sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
-# [데이터 현황 및 반출]
 st.subheader("📊 전국 방송 시설 데이터 현황")
 if not res_df.empty:
     view_df = res_df[['지역', '구분', '이름', '위도', '경도', '주소']].copy()
