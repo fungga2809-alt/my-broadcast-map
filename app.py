@@ -11,9 +11,9 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1027", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1028", layout="wide")
 
-# [관제 대시보드 전용 CSS]
+# [CSS 설정]
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; padding-top: 1rem !important; max-width: 100% !important; }
     [data-testid="stSidebar"] { background-color: #f1f3f5 !important; border-right: 1px solid #dee2e6 !important; }
@@ -34,7 +34,7 @@ SL_FM = ['KBS1-FM', 'KBS2-FM', 'KBS-Music', 'MBC-FM', 'MBC-AM', 'KNN-FM', 'EBS-F
 SL = SL_DTV + SL_UHD + SL_DMB + SL_FM
 CL = ['지역', '구분', '이름'] + SL + ['위도', '경도', '주소']
 
-# [도구함]
+# [함수 모음]
 def safe_float(val, default=0.0):
     try: return float(val) if val and str(val).strip() != "" else default
     except: return default
@@ -86,16 +86,8 @@ def generate_popup_html(r):
         <details style='cursor:pointer; background:#eee; padding:5px; border-radius:5px;'><summary style='font-weight:bold;'>📻 FM 라디오</summary><div style='margin-top:8px;'>{fm_h if fm_h else '제원 없음'}</div></details>
     </div>"""
 
-# 초기화 변수들
-defaults = {
-    'gs_sync_on': True, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 280000,
-    'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
-    'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
-    'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "",
-    'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
-    'show_coverage': False, 'cov_radius': 10, 'show_los': True 
-}
+# 초기화
+defaults = {'gs_sync_on': True, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "", 'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 290000, 'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "", 'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0, 'show_coverage': False, 'cov_radius': 10, 'show_los': True}
 for k, v in defaults.items():
     if k not in sd: sd[k] = v
 for s in SL:
@@ -144,7 +136,6 @@ if 'df' not in sd: sd.df = load_db()
 # --- 사이드바 ---
 with st.sidebar:
     st.header("⚙️ 관제 및 분석")
-    
     gs_toggle = st.toggle("🌐 클라우드 실시간 연동", value=sd.gs_sync_on)
     if gs_toggle != sd.gs_sync_on:
         sd.gs_sync_on = gs_toggle
@@ -152,7 +143,6 @@ with st.sidebar:
         st.rerun()
 
     sd.map_layer = st.radio("🗺️ 지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
-    
     c_tog, c_sld = st.columns([1, 1])
     with c_tog: sd.show_coverage = st.toggle("⭕ 예상 커버리지", value=sd.show_coverage)
     with c_sld: 
@@ -164,23 +154,20 @@ with st.sidebar:
 
     st.markdown("**🌍 지도 공간 점프**")
     st.markdown("""<div style='background-color: #e7f5ff; border-left: 4px solid #228be6; padding: 12px; border-radius: 4px; color: #1864ab; font-size: 13px;'>💡 <b>Pro Tip:</b> 좌표를 넣고 [엔터]를 치세요.</div>""", unsafe_allow_html=True)
-    
     with st.form("jump_form", clear_on_submit=False):
         jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="좌표 입력", label_visibility="collapsed")
-        jump_submit = st.form_submit_button("이동", use_container_width=True)
-        if jump_submit and jump_q:
+        if st.form_submit_button("이동", use_container_width=True) and jump_q:
             lat_lon = parse_coord_input(jump_q)
             if lat_lon[0] is not None:
                 sd.base_center = [lat_lon[0], lat_lon[1]]; sd.crosshair_center = [lat_lon[0], lat_lon[1]]; sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
             else:
                 geolocator = Nominatim(user_agent="b_master"); loc = geolocator.geocode(jump_q)
-                if loc: sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]; sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
+                if loc: sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]; sd.map_key += 1; st.rerun()
                 else: st.toast("검색 실패! 구글 좌표를 복사해서 넣어주세요.", icon="❌")
 
-    st.divider()
     st.subheader("📝 시설 제원 관리")
     if st.button("📍 내 위치 이동"): sd.map_key += 1; st.rerun() 
-    if st.button("🔄 입력창 비우기"): sd.m_mode, sd.target_nm = "신규 등록", None; st.rerun()
+    if st.button("🔄 입력창 비우기"): sd.m_mode, sd.target_nm = "신규 등록", None; sd.temp_active = False; st.rerun()
 
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 1. 조준경 위치 추출"):
@@ -199,6 +186,8 @@ with st.sidebar:
     with t1:
         st.radio("작업 모드", ["신규", "수정", "삭제"], key="m_mode_tab", horizontal=True, label_visibility="collapsed")
         sd.m_mode = {"신규": "신규 등록", "수정": "정보 수정", "삭제": "데이터 삭제"}[st.session_state.m_mode_tab]
+        if sd.m_mode == "데이터 삭제" and st.button("🚨 시설 영구 삭제"):
+            if sd.target_nm: sd.df = sd.df[sd.df['이름'] != sd.target_nm]; save_db(sd.df); sd.target_nm = None; st.rerun()
         st.text_input("지역", key="in_reg_direct"); st.text_input("시설명", key="in_v_nm"); st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True); st.text_area("주소", key="in_v_addr", height=70)
     with t2:
         c1, c2 = st.columns(2)
@@ -216,13 +205,21 @@ with st.sidebar:
 
     with st.expander("📡 RF 기술 분석 툴"):
         if sd.target_nm:
-            dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
-            st.metric("거리", f"{dist_km:.2f} km"); sd.show_los = st.checkbox("LOS 라인 표시", value=sd.show_los)
+            dist = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
+            st.metric("거리", f"{dist:.2f} km"); sd.show_los = st.checkbox("LOS 라인 표시", value=sd.show_los)
     with st.expander("🧮 채널-주파수 변환기"):
         ch = st.number_input("CH", 14, 69, 14); st.success(f"{473 + (ch-14)*6} MHz")
 
 # --- 메인 화면 ---
+res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' if sd.map_layer == "특수지형도" else 'http://mt1.google.com/vt/lyrs=y&hl=ko&x={x}&y={y}&z={z}'), attr='Google')
 for _, r in res_df.iterrows():
+    if sd.target_nm == r['이름']:
+        if sd.get('show_los'): folium.PolyLine([[safe_float(r['위도']), safe_float(r['경도'])], sd.crosshair_center], color='red', weight=2, dash_array='5').add_to(m)
     folium.Marker([safe_float(r['위도']), safe_float(r['경도'])], popup=folium.Popup(generate_popup_html(r), max_width=400)).add_to(m)
-st_folium(m, use_container_width=True, height=850)
+if sd.get('temp_active'): folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
+map_res = st_folium(m, use_container_width=True, height=850, key=f"map_{sd.map_key}")
+if map_res and map_res.get("center"): sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
+
+st.subheader("📊 전국 방송 시설 데이터 현황")
+st.dataframe(res_df, use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
