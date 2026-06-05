@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1019", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1020", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -95,7 +95,7 @@ def generate_popup_html(r):
 defaults = {
     'gs_sync_on': True,
     'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 220000,
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 230000,
     'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
     'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
     'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "",
@@ -179,32 +179,49 @@ with st.sidebar:
     sd.ch_search = st.text_input("🔎 내 장부 통합 검색", placeholder="저장된 시설명, 채널 등")
 
     st.divider()
-    
-    # 🚩 [해결]: Form을 사용하여 Enter 키 입력 시에도 작동하도록 변경
-    st.markdown("**🌍 원하는 위치로 지도 이동 (신규 등록 시)**")
+    st.markdown("**🌍 원하는 위치로 지도 이동** (엔터키 가능)")
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
         with c_jmp:
-            jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="주소, 지역명 또는 좌표", label_visibility="collapsed")
+            jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="양산시 금오16길 122", label_visibility="collapsed")
         with c_btn:
             jump_submit = st.form_submit_button("이동", use_container_width=True)
             
         if jump_submit and jump_q:
             lat_lon = parse_coord_input(jump_q)
-            if lat_lon[0] is not None: # 좌표로 인식된 경우
+            if lat_lon[0] is not None:
                 sd.base_center = [lat_lon[0], lat_lon[1]]
                 sd.crosshair_center = [lat_lon[0], lat_lon[1]]
                 sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
-            else: # 주소로 인식된 경우
+            else:
+                # 🚩 [핵심 업데이트]: 3단 콤보 주소 검색 로직
+                geolocator = Nominatim(user_agent="b_master")
+                loc = None
+                
                 try:
-                    loc = Nominatim(user_agent="b_master").geocode(jump_q)
+                    # 1. 원본 그대로 검색
+                    loc = geolocator.geocode(jump_q)
+                    
+                    # 2. '금오 16길' -> '금오16길' 띄어쓰기 압축 보완
+                    if not loc:
+                        q_nospace = re.sub(r'([가-힣]+)\s+(\d+[가-힣]+)', r'\1\2', jump_q)
+                        if q_nospace != jump_q:
+                            loc = geolocator.geocode(q_nospace)
+                            
+                    # 3. 상세 번지수(예: 122) 떼고 길 이름으로만 주변 탐색
+                    if not loc and " " in jump_q:
+                        q_nobuilding = " ".join(jump_q.split()[:-1])
+                        loc = geolocator.geocode(q_nobuilding)
+                        if loc:
+                            st.toast(f"상세 번지수를 찾지 못해 '{q_nobuilding}' 근처로 이동합니다.", icon="ℹ️")
+
                     if loc:
                         sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]
                         sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
                     else:
-                        st.toast("검색 실패! '양산시 금오16길'처럼 지역명을 꼭 포함해주시거나 좌표를 입력하세요.", icon="❌")
+                        st.toast("한국 주소 인식 실패! '양산시 동면'으로 넓게 치거나 좌표를 넣어주세요.", icon="❌")
                 except:
-                    st.toast("네트워크 오류. 다시 시도해주세요.", icon="⚠️")
+                    st.toast("지도 네트워크 오류입니다. 좌표를 입력해 주세요.", icon="⚠️")
 
     st.divider()
     if sd.target_nm:
