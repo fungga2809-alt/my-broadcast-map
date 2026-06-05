@@ -5,12 +5,13 @@ from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import math
+import re
 from branca.element import Template, MacroElement
 from streamlit_gsheets import GSheetsConnection 
 import time
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Broadcasting Master v1016", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1018", layout="wide")
 
 # [관제 대시보드 전용 CSS]
 st.markdown("""<style>
@@ -58,6 +59,22 @@ def get_google_format(lat, lon):
         return f"{to_dms(lat, True)} {to_dms(lon, False)}"
     except: return ""
 
+def parse_coord_input(q):
+    try:
+        if ',' in q and '°' not in q:
+            return tuple(map(float, q.split(',')))
+        if '°' in q:
+            matches = re.findall(r"(\d+)[°\s]+(\d+)['\s]+([\d\.]+)(?:\"|''|\s)*([NSEW])", q.upper())
+            if len(matches) == 2:
+                c = []
+                for m in matches:
+                    dd = float(m[0]) + float(m[1])/60 + float(m[2])/3600
+                    if m[3] in ['S', 'W']: dd *= -1
+                    c.append(dd)
+                return c[0], c[1]
+    except: pass
+    return None, None
+
 def generate_popup_html(r):
     dtv_h = "".join(["<div style='display:flex; justify-content:space-between;'><span><b>" + str(s) + "</b></span><span>" + str(r.get(s, '')) + "</span></div>" for s in SL_DTV if r.get(s, '')])
     uhd_h = "".join(["<div style='display:flex; justify-content:space-between; color:#007bff;'><span><b>" + str(s) + "</b></span><span>" + str(r.get(s, '')) + "</span></div>" for s in SL_UHD if r.get(s, '')])
@@ -74,6 +91,21 @@ def generate_popup_html(r):
         <details style='cursor:pointer; background:#f0f7ff; padding:5px; border-radius:5px; margin-bottom:5px;'><summary style='font-weight:bold;'>📱 DMB 채널</summary><div style='margin-top:8px;'>{dmb_h if dmb_h else '제원 없음'}</div></details>
         <details style='cursor:pointer; background:#eee; padding:5px; border-radius:5px;'><summary style='font-weight:bold;'>📻 FM 라디오</summary><div style='margin-top:8px;'>{fm_h if fm_h else '제원 없음'}</div></details>
     </div>"""
+
+# 🚩 [로직 최적화]: 앱 실행 시 기본값을 '먼저' 세팅하여 시트 동기화를 즉시 활성화
+defaults = {
+    'gs_sync_on': True, # 🌟 클라우드 실시간 연동 기본값 ON
+    'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
+    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 210000,
+    'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
+    'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
+    'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "",
+    'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0
+}
+for k, v in defaults.items():
+    if k not in sd: sd[k] = v
+for s in SL:
+    if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
 
 # [데이터 로드/저장 로직]
 def load_db():
@@ -116,20 +148,6 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
 
 if 'df' not in sd: sd.df = load_db()
 
-# [기본 설정 초기화]
-defaults = {
-    'gs_sync_on': False, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-    'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 'base_zoom': 14, 'map_key': 190000,
-    'm_mode': "정보 수정", 'target_nm': None, 'in_v_nm': "", 'in_reg_direct': "", 
-    'in_v_cat': "송신소", 'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
-    'prev_sel': [], 'msg_save': False, 'msg_extract': False, 'map_jump_q': "",
-    'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0
-}
-for k, v in defaults.items():
-    if k not in sd: sd[k] = v
-for s in SL:
-    if f"ch_{s}" not in sd: sd[f"ch_{s}"] = ""
-
 # [표 선택 연동]
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
     idx = sd.main_table["selection"]["rows"][0]
@@ -171,17 +189,21 @@ with st.sidebar:
     with c_btn:
         if st.button("이동", use_container_width=True):
             if jump_q:
-                try:
-                    if ',' in jump_q: 
-                        lat, lon = map(float, jump_q.split(','))
-                        sd.base_center = [lat, lon]; sd.crosshair_center = [lat, lon]
-                        sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
-                    else: 
+                lat_lon = parse_coord_input(jump_q)
+                if lat_lon[0] is not None:
+                    sd.base_center = [lat_lon[0], lat_lon[1]]
+                    sd.crosshair_center = [lat_lon[0], lat_lon[1]]
+                    sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
+                else: 
+                    try:
                         loc = Nominatim(user_agent="b_master").geocode(jump_q)
                         if loc:
                             sd.base_center = [loc.latitude, loc.longitude]; sd.crosshair_center = [loc.latitude, loc.longitude]
                             sd.map_jump_q = jump_q; sd.map_key += 1; st.rerun()
-                except: pass
+                        else:
+                            st.toast("해당 주소를 찾을 수 없습니다.", icon="❌")
+                    except:
+                        st.toast("네트워크 오류. 다시 시도해주세요.", icon="⚠️")
 
     st.divider()
     if sd.target_nm:
@@ -212,10 +234,7 @@ with st.sidebar:
     st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
     if st.button("🎯 조준경 위치 추출"):
         sd.in_t_la, sd.in_t_lo = sd.crosshair_center
-        
-        # 🚩 [핵심 해결]: 화면을 새로고침할 때 지도 중심축이 튀지 않도록 현재 조준경 위치로 완전히 동기화
         sd.base_center = [sd.in_t_la, sd.in_t_lo]
-        
         try:
             loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
             if loc: sd.in_v_addr = loc.address
