@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1039", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1040", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -42,7 +42,8 @@ if 'init' not in sd:
         'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "송신소", 'in_v_cov': 0.0,
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
-        'show_global_coverage': False, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': ""
+        'show_global_coverage': False, 'show_los_line': True, 'map_jump_q': "",
+        'prev_sel_name': None  # 🚩 무한 루프 방지용 변수 추가!
     })
     for s in SL:
         sd[f"ch_{s}"] = ""
@@ -126,29 +127,34 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
     return res
 
-# 최초 DB 로드
 if 'df' not in sd:
     sd.df = load_db()
 
 # -----------------------------------------------------------------------------
-# 4. 표(Table) 선택 연동 로직
+# 4. 표(Table) 선택 연동 (무한 루프 방지 로직 적용)
 # -----------------------------------------------------------------------------
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
     idx = sd.main_table["selection"]["rows"][0]
     temp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
+    
     if idx < len(temp_df):
         sel = temp_df.iloc[idx]
-        if sd.target_nm != sel['이름']:
-            sd.target_nm = sel['이름']
+        sel_name = sel['이름']
+        
+        # 🚩 핵심: 이전에 클릭한 이름과 '다를 때만' 지도를 이동시킴 (무한 튕김 방지)
+        if sd.get('prev_sel_name') != sel_name:
+            sd['prev_sel_name'] = sel_name  # 현재 선택 저장
+            
+            sd.target_nm = sel_name
             sd.m_mode = "정보 수정"
             sd.temp_active = False
-            sd.show_los_chart = False 
             sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
             sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
             sd.in_v_addr = str(sel['주소'])
             sd.in_t_la, sd.in_t_lo = safe_float(sel['위도']), safe_float(sel['경도'])
             for s in SL: 
                 sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
+                
             sd.base_center = [sd.in_t_la, sd.in_t_lo]
             sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
             sd.map_key += 1
@@ -228,6 +234,7 @@ with st.sidebar:
             if st.button("🔄 초기화"): 
                 sd.m_mode = "신규 등록"
                 sd.target_nm = None
+                sd.prev_sel_name = None # 초기화 시 선택 기록도 삭제
                 sd.in_v_nm = ""
                 sd.in_v_cov = 0.0
                 sd.temp_active = False
@@ -240,6 +247,7 @@ with st.sidebar:
                 sd.df = sd.df[sd.df['이름'] != sd.target_nm]
                 save_db(sd.df)
                 sd.target_nm = None
+                sd.prev_sel_name = None
                 st.rerun()
 
         sd.in_reg_direct = st.text_input("지역", value=sd.in_reg_direct)
@@ -253,27 +261,28 @@ with st.sidebar:
         
         sd.in_v_addr = st.text_area("주소", value=sd.in_v_addr, height=70)
 
-        with st.expander("📺 주파수 채널 입력 (DTV/UHD/DMB/FM)", expanded=False):
-            st.caption("필요한 채널만 입력하세요.")
-            
-            st.markdown("**DTV & UHD**")
+        # 🚩 [UI 복구]: FM 채널 공간 넓게 확보
+        with st.expander("📺 DTV & UHD 채널 입력", expanded=True):
             c1, c2 = st.columns(2)
             with c1: 
+                st.markdown("**DTV**")
                 for s in SL_DTV: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
             with c2: 
+                st.markdown("**UHD**")
                 for s in SL_UHD: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
+                
+        with st.expander("📻 DMB & FM 라디오 채널 입력", expanded=True):
+            st.markdown("**DMB**")
+            c_dmb1, c_dmb2, c_dmb3 = st.columns(3)
+            with c_dmb1: sd[f"ch_{SL_DMB[0]}"] = st.text_input(SL_DMB[0], value=sd[f"ch_{SL_DMB[0]}"])
+            with c_dmb2: sd[f"ch_{SL_DMB[1]}"] = st.text_input(SL_DMB[1], value=sd[f"ch_{SL_DMB[1]}"])
+            with c_dmb3: sd[f"ch_{SL_DMB[2]}"] = st.text_input(SL_DMB[2], value=sd[f"ch_{SL_DMB[2]}"])
             
-            st.markdown("**DMB & FM 라디오**")
-            c3, c4 = st.columns(2)
-            
-            # 🚩 [UI 복구]: DMB와 FM 채널 전체를 균등하게 분배하여 잘리는 부분 없이 출력
-            all_dmb_fm = SL_DMB + SL_FM
-            half_idx = math.ceil(len(all_dmb_fm) / 2)
-            
-            with c3: 
-                for s in all_dmb_fm[:half_idx]: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
-            with c4: 
-                for s in all_dmb_fm[half_idx:]: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"]) 
+            st.markdown("**FM 라디오**")
+            c_fm1, c_fm2 = st.columns(2)
+            for i, s in enumerate(SL_FM):
+                with c_fm1 if i % 2 == 0 else c_fm2:
+                    sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"]) 
 
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
         if st.button("✅ 2. 데이터 통합 저장", use_container_width=True):
@@ -285,6 +294,7 @@ with st.sidebar:
                     sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 save_db(sd.df)
                 sd.target_nm = sd.in_v_nm
+                sd.prev_sel_name = sd.in_v_nm
                 sd.temp_active = False
                 st.success("저장 완료!")
                 st.rerun()
@@ -293,28 +303,25 @@ with st.sidebar:
 
     # ---------- TAB 2: RF 기술 분석 ----------
     with tab2:
-        st.subheader("🔍 가시권(LOS) 분석")
+        st.subheader("🔍 가시권(LOS) 단면도")
         if sd.target_nm:
-            st.markdown(f"**대상:** {sd.target_nm}")
-            st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
-            if st.button("🚀 가시선 분석 실행 (대상 ↔ 조준경)", use_container_width=True):
-                sd.show_los_chart = True
-                
-            if sd.show_los_chart:
-                dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
-                bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
-                c1, c2 = st.columns(2)
-                c1.metric("수신 거리", f"{dist_km:.2f} km")
-                c2.metric("방위각", f"{bear:.1f}°")
-                
-                if dist_km > 0.1:
-                    fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
-                    earth_bulge = (dist_km * dist_km) / 50.96 
-                    st.caption(f"프레넬 반경: **{fresnel_r:.1f}m** | 지구 곡률: **{earth_bulge:.1f}m**")
-                    dist_pts = [dist_km * i / 20 for i in range(21)]
-                    bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
-                    st.area_chart(pd.DataFrame({'가림고(m)': bulge_pts}, index=dist_pts), color="#ced4da", height=150)
-                    sd.show_los_line = st.checkbox("지도에 LOS 라인 그리기", value=sd.show_los_line)
+            st.markdown(f"**대상:** {sd.target_nm} ↔ 조준경")
+            
+            # 🚩 [기능 복구]: 버튼 없이 탭 열면 실시간 자동 연동 계산
+            dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
+            bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
+            c1, c2 = st.columns(2)
+            c1.metric("수신 거리", f"{dist_km:.2f} km")
+            c2.metric("방위각", f"{bear:.1f}°")
+            
+            if dist_km > 0.1:
+                fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
+                earth_bulge = (dist_km * dist_km) / 50.96 
+                st.caption(f"프레넬 반경: **{fresnel_r:.1f}m** | 지구 곡률: **{earth_bulge:.1f}m**")
+                dist_pts = [dist_km * i / 20 for i in range(21)]
+                bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
+                st.area_chart(pd.DataFrame({'가림고(m)': bulge_pts}, index=dist_pts), color="#ced4da", height=150)
+                sd.show_los_line = st.checkbox("지도에 빨간색 LOS 라인 그리기", value=sd.show_los_line)
         else:
             st.info("하단 표에서 기준 송신소를 먼저 선택하세요.")
             
@@ -339,7 +346,7 @@ else:
 
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
 
-# 조준경 삽입 (충돌 방지 방식)
+# 조준경 삽입
 crosshair_html = """
 <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid red; border-radius: 50%; pointer-events: none; z-index: 1000;">
     <div style="position: absolute; top: 50%; left: -10px; width: 60px; height: 2px; background: red;"></div>
@@ -358,8 +365,8 @@ for _, r in res_df.iterrows():
     if sd.show_global_coverage and cov > 0:
         folium.Circle(location=[lat, lon], radius=cov * 1000, color='#1864ab', fill=True, fill_color='#74c0fc', fill_opacity=0.2, tooltip=f"{r['이름']} (반경 {cov}km)").add_to(m)
         
-    # 가시권 분석 라인 그리기
-    if sd.show_los_chart and sd.show_los_line and sd.target_nm == r['이름']:
+    # 가시권 분석 라인 그리기 (버튼 없이 실시간 연동)
+    if sd.show_los_line and sd.target_nm == r['이름']:
         if geodesic((lat, lon), sd.crosshair_center).km > 0.1:
             folium.PolyLine(locations=[[lat, lon], sd.crosshair_center], color='red', weight=2.5, dash_array='5, 5', tooltip="RF 가시선").add_to(m)
 
@@ -370,6 +377,7 @@ if sd.temp_active:
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
 map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
+# 지도를 움직이면 crosshair_center가 자동 업데이트되어 RF 분석에 실시간 반영됨
 if map_res and map_res.get("center"): 
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
