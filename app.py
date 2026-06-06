@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1038", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1039", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -126,6 +126,7 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
     return res
 
+# 최초 DB 로드
 if 'df' not in sd:
     sd.df = load_db()
 
@@ -167,8 +168,14 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 내 장부 검색", placeholder="저장된 시설명, 채널 등")
 
-    # 🚩 [UI 복구 1]: 지도 이동 폼 가로 배열 & 안내 문구 복구
     st.markdown("**🌍 원하는 위치로 지도 이동 (신규 등록 시 유용)**")
+    st.markdown("""
+    <div style='background-color: #e7f5ff; border-left: 4px solid #228be6; padding: 12px; border-radius: 4px; color: #1864ab; font-size: 13.5px; margin-bottom: 12px; line-height: 1.5;'>
+        💡 <b>Pro Tip:</b> 오픈소스 지도 특성상 상세 주소 검색이 안 될 수 있습니다.<br>
+        <b>구글 지도나 구글 어스의 좌표(위도, 경도)</b>를 복사해 붙여넣으시면 가장 빠르고 정확합니다!
+    </div>
+    """, unsafe_allow_html=True)
+
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
         with c_jmp: 
@@ -193,7 +200,7 @@ with st.sidebar:
                     sd.map_key += 1
                     st.rerun()
                 else: 
-                    st.toast("검색 실패! 구글지도에서 좌표를 복사해서 넣어주세요.", icon="❌")
+                    st.toast("검색 실패! 좌표를 넣어주세요.", icon="❌")
 
     st.divider()
     tab1, tab2 = st.tabs(["📝 시설 관리", "📡 RF 분석"])
@@ -248,19 +255,25 @@ with st.sidebar:
 
         with st.expander("📺 주파수 채널 입력 (DTV/UHD/DMB/FM)", expanded=False):
             st.caption("필요한 채널만 입력하세요.")
+            
+            st.markdown("**DTV & UHD**")
             c1, c2 = st.columns(2)
             with c1: 
-                st.markdown("**DTV**")
                 for s in SL_DTV: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
             with c2: 
-                st.markdown("**UHD**")
                 for s in SL_UHD: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
-            st.markdown("**DMB & FM**")
+            
+            st.markdown("**DMB & FM 라디오**")
             c3, c4 = st.columns(2)
+            
+            # 🚩 [UI 복구]: DMB와 FM 채널 전체를 균등하게 분배하여 잘리는 부분 없이 출력
+            all_dmb_fm = SL_DMB + SL_FM
+            half_idx = math.ceil(len(all_dmb_fm) / 2)
+            
             with c3: 
-                for s in SL_DMB: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
+                for s in all_dmb_fm[:half_idx]: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
             with c4: 
-                for s in SL_FM[:3]: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"]) 
+                for s in all_dmb_fm[half_idx:]: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"]) 
 
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
         if st.button("✅ 2. 데이터 통합 저장", use_container_width=True):
@@ -360,7 +373,6 @@ map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_k
 if map_res and map_res.get("center"): 
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
-# 🚩 [UI 복구 2]: 데이터 프레임 전체 컬럼 노출 및 배경색 스타일링 완벽 복구
 st.subheader("📊 전국 방송 시설 데이터 현황")
 
 if not res_df.empty:
