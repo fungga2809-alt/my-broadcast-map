@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1037", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1038", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -126,7 +126,6 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
     return res
 
-# 최초 DB 로드
 if 'df' not in sd:
     sd.df = load_db()
 
@@ -168,15 +167,8 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 내 장부 검색", placeholder="저장된 시설명, 채널 등")
 
-    # 🚩 [UI 복구 1]: 세련된 Pro Tip 안내창 및 가로형 검색 폼 복구 완료!
-    st.markdown("**🌍 원하는 위치로 지도 이동** (엔터키 가능)")
-    st.markdown("""
-    <div style='background-color: #e7f5ff; border-left: 4px solid #228be6; padding: 12px; border-radius: 4px; color: #1864ab; font-size: 13.5px; margin-bottom: 12px; line-height: 1.5;'>
-        💡 <b>Pro Tip:</b> 오픈소스 지도 특성상 상세 주소 검색이 안 될 수 있습니다.<br>
-        <b>구글 지도나 구글 어스의 좌표(위도, 경도)</b>를 복사해 붙여넣으시면 가장 빠르고 정확합니다!
-    </div>
-    """, unsafe_allow_html=True)
-
+    # 🚩 [UI 복구 1]: 지도 이동 폼 가로 배열 & 안내 문구 복구
+    st.markdown("**🌍 원하는 위치로 지도 이동 (신규 등록 시 유용)**")
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
         with c_jmp: 
@@ -201,7 +193,7 @@ with st.sidebar:
                     sd.map_key += 1
                     st.rerun()
                 else: 
-                    st.toast("검색 실패! 좌표를 넣어주세요.", icon="❌")
+                    st.toast("검색 실패! 구글지도에서 좌표를 복사해서 넣어주세요.", icon="❌")
 
     st.divider()
     tab1, tab2 = st.tabs(["📝 시설 관리", "📡 RF 분석"])
@@ -368,12 +360,21 @@ map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_k
 if map_res and map_res.get("center"): 
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
-# 🚩 [UI 복구 2]: 하단 다운로드 버튼 및 데이터 프레임 복구 완료!
+# 🚩 [UI 복구 2]: 데이터 프레임 전체 컬럼 노출 및 배경색 스타일링 완벽 복구
 st.subheader("📊 전국 방송 시설 데이터 현황")
-st.dataframe(res_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'};" for _ in row], axis=1), use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table")
 
-c1, c2 = st.columns(2)
-with c1: 
-    st.download_button("📥 CSV 저장 (Excel용)", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
-with c2: 
-    st.download_button("🌍 KML 저장 (Google Earth용)", data='<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>' + "".join([f"<Placemark><name>{r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>" for _, r in res_df.iterrows()]) + "</Document></kml>", file_name="stations.kml", use_container_width=True)
+if not res_df.empty:
+    st.dataframe(
+        res_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'};" for _ in row], axis=1), 
+        use_container_width=True, 
+        on_select="rerun", 
+        selection_mode="single-row", 
+        hide_index=True, 
+        key="main_table"
+    )
+
+    c1, c2 = st.columns(2)
+    with c1: 
+        st.download_button("📥 CSV 저장 (Excel용)", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations.csv", use_container_width=True)
+    with c2: 
+        st.download_button("🌍 KML 저장 (Google Earth용)", data='<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>' + "".join([f"<Placemark><name>{r['이름']}</name><Point><coordinates>{r['경도']},{r['위도']},0</coordinates></Point></Placemark>" for _, r in res_df.iterrows()]) + "</Document></kml>", file_name="stations.kml", use_container_width=True)
