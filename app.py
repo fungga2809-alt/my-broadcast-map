@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1040", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1042", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -42,8 +42,8 @@ if 'init' not in sd:
         'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "송신소", 'in_v_cov': 0.0,
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
-        'show_global_coverage': False, 'show_los_line': True, 'map_jump_q': "",
-        'prev_sel_name': None  # 🚩 무한 루프 방지용 변수 추가!
+        'show_global_coverage': False, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
+        'prev_sel_name': None
     })
     for s in SL:
         sd[f"ch_{s}"] = ""
@@ -124,41 +124,46 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         sort_map = {'송신소': 1, '중계소': 2}
         res = res.copy()
         res['구분_순서'] = res['구분'].map(sort_map).fillna(3)
-        res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서'])
+        # 🚩 무한 루프 차단용 핵심 1: 정렬 후 Index를 완벽하게 초기화하여 표의 클릭 위치와 데이터 위치를 1:1로 일치시킴
+        res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서']).reset_index(drop=True)
     return res
 
 if 'df' not in sd:
     sd.df = load_db()
 
 # -----------------------------------------------------------------------------
-# 4. 표(Table) 선택 연동 (무한 루프 방지 로직 적용)
+# 4. 표(Table) 선택 연동 로직 (무한 루프 방지 로직 적용)
 # -----------------------------------------------------------------------------
 if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
-    idx = sd.main_table["selection"]["rows"][0]
-    temp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
-    
-    if idx < len(temp_df):
-        sel = temp_df.iloc[idx]
-        sel_name = sel['이름']
+    sel_rows = sd.main_table["selection"]["rows"]
+    if sel_rows:
+        idx = sel_rows[0]
+        temp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
         
-        # 🚩 핵심: 이전에 클릭한 이름과 '다를 때만' 지도를 이동시킴 (무한 튕김 방지)
-        if sd.get('prev_sel_name') != sel_name:
-            sd['prev_sel_name'] = sel_name  # 현재 선택 저장
+        if idx < len(temp_df):
+            sel = temp_df.iloc[idx]
+            sel_name = sel['이름']
             
-            sd.target_nm = sel_name
-            sd.m_mode = "정보 수정"
-            sd.temp_active = False
-            sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
-            sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
-            sd.in_v_addr = str(sel['주소'])
-            sd.in_t_la, sd.in_t_lo = safe_float(sel['위도']), safe_float(sel['경도'])
-            for s in SL: 
-                sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
+            # 🚩 무한 루프 차단용 핵심 2: 사용자가 실제로 다른 시설을 클릭했을 때만 정보 갱신
+            if sd.get('prev_sel_name') != sel_name:
+                sd['prev_sel_name'] = sel_name  
                 
-            sd.base_center = [sd.in_t_la, sd.in_t_lo]
-            sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
-            sd.map_key += 1
-            st.rerun()
+                sd.target_nm = sel_name
+                sd.m_mode = "정보 수정"
+                sd.temp_active = False
+                sd.show_los_chart = False 
+                sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
+                sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
+                sd.in_v_addr = str(sel['주소'])
+                sd.in_t_la, sd.in_t_lo = safe_float(sel['위도']), safe_float(sel['경도'])
+                for s in SL: 
+                    sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
+                    
+                sd.base_center = [sd.in_t_la, sd.in_t_lo]
+                sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
+                sd.map_key += 1
+                
+                # 🚩 무한 루프 차단용 핵심 3: 여기서 st.rerun()을 호출하지 않음으로써 표 리셋 오류를 방지함.
 
 # -----------------------------------------------------------------------------
 # 5. 사이드바 UI (대시보드 및 탭)
@@ -206,7 +211,7 @@ with st.sidebar:
                     sd.map_key += 1
                     st.rerun()
                 else: 
-                    st.toast("검색 실패! 좌표를 넣어주세요.", icon="❌")
+                    st.toast("검색 실패! 구글지도에서 좌표를 복사해서 넣어주세요.", icon="❌")
 
     st.divider()
     tab1, tab2 = st.tabs(["📝 시설 관리", "📡 RF 분석"])
@@ -234,7 +239,7 @@ with st.sidebar:
             if st.button("🔄 초기화"): 
                 sd.m_mode = "신규 등록"
                 sd.target_nm = None
-                sd.prev_sel_name = None # 초기화 시 선택 기록도 삭제
+                sd.prev_sel_name = None 
                 sd.in_v_nm = ""
                 sd.in_v_cov = 0.0
                 sd.temp_active = False
@@ -261,7 +266,6 @@ with st.sidebar:
         
         sd.in_v_addr = st.text_area("주소", value=sd.in_v_addr, height=70)
 
-        # 🚩 [UI 복구]: FM 채널 공간 넓게 확보
         with st.expander("📺 DTV & UHD 채널 입력", expanded=True):
             c1, c2 = st.columns(2)
             with c1: 
@@ -306,22 +310,25 @@ with st.sidebar:
         st.subheader("🔍 가시권(LOS) 단면도")
         if sd.target_nm:
             st.markdown(f"**대상:** {sd.target_nm} ↔ 조준경")
-            
-            # 🚩 [기능 복구]: 버튼 없이 탭 열면 실시간 자동 연동 계산
-            dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
-            bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
-            c1, c2 = st.columns(2)
-            c1.metric("수신 거리", f"{dist_km:.2f} km")
-            c2.metric("방위각", f"{bear:.1f}°")
-            
-            if dist_km > 0.1:
-                fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
-                earth_bulge = (dist_km * dist_km) / 50.96 
-                st.caption(f"프레넬 반경: **{fresnel_r:.1f}m** | 지구 곡률: **{earth_bulge:.1f}m**")
-                dist_pts = [dist_km * i / 20 for i in range(21)]
-                bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
-                st.area_chart(pd.DataFrame({'가림고(m)': bulge_pts}, index=dist_pts), color="#ced4da", height=150)
-                sd.show_los_line = st.checkbox("지도에 빨간색 LOS 라인 그리기", value=sd.show_los_line)
+            st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
+            if st.button("🚀 가시선 분석 실행 (대상 ↔ 조준경)", use_container_width=True):
+                sd.show_los_chart = True
+                
+            if sd.show_los_chart:
+                dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
+                bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
+                c1, c2 = st.columns(2)
+                c1.metric("수신 거리", f"{dist_km:.2f} km")
+                c2.metric("방위각", f"{bear:.1f}°")
+                
+                if dist_km > 0.1:
+                    fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
+                    earth_bulge = (dist_km * dist_km) / 50.96 
+                    st.caption(f"프레넬 반경: **{fresnel_r:.1f}m** | 지구 곡률: **{earth_bulge:.1f}m**")
+                    dist_pts = [dist_km * i / 20 for i in range(21)]
+                    bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
+                    st.area_chart(pd.DataFrame({'가림고(m)': bulge_pts}, index=dist_pts), color="#ced4da", height=150)
+                    sd.show_los_line = st.checkbox("지도에 빨간색 LOS 라인 그리기", value=sd.show_los_line)
         else:
             st.info("하단 표에서 기준 송신소를 먼저 선택하세요.")
             
@@ -360,24 +367,21 @@ for _, r in res_df.iterrows():
     lat, lon = safe_float(r['위도']), safe_float(r['경도'])
     if lat == 0.0: continue
     
-    # 커버리지 그리기
     cov = safe_float(r.get('커버리지', 0))
     if sd.show_global_coverage and cov > 0:
         folium.Circle(location=[lat, lon], radius=cov * 1000, color='#1864ab', fill=True, fill_color='#74c0fc', fill_opacity=0.2, tooltip=f"{r['이름']} (반경 {cov}km)").add_to(m)
         
-    # 가시권 분석 라인 그리기 (버튼 없이 실시간 연동)
-    if sd.show_los_line and sd.target_nm == r['이름']:
+    if sd.show_los_chart and sd.show_los_line and sd.target_nm == r['이름']:
         if geodesic((lat, lon), sd.crosshair_center).km > 0.1:
             folium.PolyLine(locations=[[lat, lon], sd.crosshair_center], color='red', weight=2.5, dash_array='5, 5', tooltip="RF 가시선").add_to(m)
 
     folium.Marker([lat, lon], icon=folium.Icon(color='red' if r['구분']=='송신소' else 'blue'), popup=folium.Popup(generate_popup_html(r), max_width=400)).add_to(m)
 
-# 임시 마커 표시 (신규 등록 시)
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
 map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
-# 지도를 움직이면 crosshair_center가 자동 업데이트되어 RF 분석에 실시간 반영됨
+
 if map_res and map_res.get("center"): 
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
