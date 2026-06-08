@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1044", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1045", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -19,8 +19,7 @@ st.markdown("""<style>
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #1971c2 !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2f9e44 !important; color: white !important; font-size: 16px !important; }
     div.element-container:has(.btn-red) + div.element-container button { background-color: #e03131 !important; color: white !important; }
-    /* 라디오 버튼 간격 조정 */
-    div[role="radiogroup"] { gap: 0rem; }
+    div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
 # 채널 및 DB 구조 설정
@@ -185,7 +184,7 @@ with st.sidebar:
 
     # ---------- TAB 1: 시설 등록/수정 ----------
     with tab1:
-        # 🚩 [UI 복구]: 조준경 위치 추출 버튼을 맨 위에 넓게 파란색으로 배치
+        # 🚩 [UI 복구 1]: 버튼을 상하로 나란히 동일한 크기로 배치
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
         if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
@@ -200,21 +199,19 @@ with st.sidebar:
             sd.map_key += 1
             st.rerun()
             
-        # 🚩 [UI 복구]: 사진(image_1421cb) 비율과 완벽히 일치하도록 3:1 배열 적용
-        c_mode, c_rst = st.columns([3, 1])
-        with c_mode: 
-            sd.m_mode = st.radio("작업", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True, label_visibility="collapsed")
-        with c_rst: 
-            # 버튼 위아래 여백을 맞추기 위한 빈 공간 삽입
-            st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
-            if st.button("🔄 초기화", use_container_width=True): 
-                sd.m_mode = "신규 등록"
-                sd.target_nm = None
-                sd.prev_sel_name = None 
-                sd.in_v_nm = ""
-                sd.in_v_cov = 0.0
-                sd.temp_active = False
-                st.rerun()
+        if st.button("🔄 2. 입력창 초기화", use_container_width=True): 
+            sd.m_mode = "신규 등록"
+            sd.target_nm = None
+            sd.prev_sel_name = None 
+            sd.in_v_nm = ""
+            sd.in_v_cov = 0.0
+            sd.temp_active = False
+            sd.show_los_chart = False
+            st.rerun()
+
+        # 라디오 버튼은 그 아래로 분리
+        st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+        sd.m_mode = st.radio("작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
 
         if sd.m_mode == "데이터 삭제":
             st.error(f"'{sd.target_nm}' 시설을 영구 삭제합니다.")
@@ -260,7 +257,7 @@ with st.sidebar:
                     sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"]) 
 
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
-        if st.button("✅ 2. 데이터 통합 저장", use_container_width=True):
+        if st.button("✅ 3. 데이터 통합 저장", use_container_width=True):
             if sd.in_v_nm and sd.in_reg_direct:
                 v = [sd.in_reg_direct, sd.in_v_cat, sd.in_v_nm, str(sd.in_v_cov)] + [sd[f"ch_{s}"] for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
                 if sd.m_mode == "정보 수정" and sd.target_nm: 
@@ -280,17 +277,12 @@ with st.sidebar:
     with tab2:
         st.markdown("### 🔍 가시권(LOS) 단면도")
         
-        # 🚩 [기능 복구]: 버튼은 항상 노출시켜서 고장난 것처럼 보이지 않게 함
-        st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
-        if st.button("🚀 가시선 분석 실행 (대상 ↔ 조준경)", use_container_width=True):
-            if sd.target_nm:
-                sd.show_los_chart = True
-            else:
-                # 대상을 선택 안 하고 누르면 친절하게 알림
-                st.toast("하단 표에서 기준 송신소를 먼저 클릭(선택)하세요!", icon="⚠️")
-                
         if sd.target_nm:
             st.markdown(f"**현재 대상:** <span style='color:#1864ab; font-weight:bold;'>{sd.target_nm}</span>", unsafe_allow_html=True)
+            
+            # 🚩 [UI 복구 2]: 2초 후 꺼짐 현상을 영구적으로 방지하기 위해 일반 버튼을 토글 스위치로 변경
+            sd.show_los_chart = st.toggle("🚀 가시선 분석 켜기 (대상 ↔ 조준경)", value=sd.show_los_chart)
+            
             if sd.show_los_chart:
                 dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
                 bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
@@ -307,7 +299,7 @@ with st.sidebar:
                     st.area_chart(pd.DataFrame({'가림고(m)': bulge_pts}, index=dist_pts), color="#ced4da", height=150)
                     sd.show_los_line = st.checkbox("지도에 빨간색 LOS 라인 그리기", value=sd.show_los_line)
         else:
-            st.info("하단 표에서 기준 송신소를 먼저 선택하세요.")
+            st.info("하단 표에서 기준 송신소를 먼저 클릭(선택)하세요.")
             
         st.divider()
         st.subheader("🧮 물리 채널 ➜ 주파수 변환기")
@@ -357,7 +349,7 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-# 🚩 [무한 루프 방지 핵심]: 지도는 return된 center만 수집
+# 지도 이벤트 처리 (중심점 이동 시 좌표 갱신)
 map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}", returned_objects=["center"])
 
 if map_res and map_res.get("center"): 
@@ -365,7 +357,7 @@ if map_res and map_res.get("center"):
 
 
 # -----------------------------------------------------------------------------
-# 6. 표 데이터 렌더링 및 클릭 이벤트 수집 (무한 루프 방지 로직 유지)
+# 6. 표 데이터 렌더링 및 클릭 이벤트 (무한 루프 방지 로직)
 # -----------------------------------------------------------------------------
 st.subheader("📊 전국 방송 시설 데이터 현황")
 
@@ -379,36 +371,42 @@ if not res_df.empty:
         key="main_table"
     )
 
-    if event and event.selection and event.selection.rows:
-        idx = event.selection.rows[0]
-        if idx < len(res_df):
-            sel_name = res_df.iloc[idx]['이름']
-            
-            if sd.get('prev_sel_name') != sel_name:
-                sd['prev_sel_name'] = sel_name 
+    if event and event.selection:
+        if event.selection.rows:
+            idx = event.selection.rows[0]
+            if idx < len(res_df):
+                sel_name = res_df.iloc[idx]['이름']
                 
-                sel = res_df.iloc[idx]
-                sd.target_nm = sel_name
-                sd.m_mode = "정보 수정"
-                sd.temp_active = False
-                sd.show_los_chart = False 
-                
-                sd.in_v_nm = sel['이름']
-                sd.in_reg_direct = sel['지역']
-                sd.in_v_cat = sel['구분']
-                sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
-                sd.in_v_addr = str(sel['주소'])
-                sd.in_t_la = safe_float(sel['위도'])
-                sd.in_t_lo = safe_float(sel['경도'])
-                
-                for s in SL: 
-                    sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
+                # 표에서 다른 시설을 클릭했을 때만 정보 갱신 (무한 루프 차단)
+                if sd.get('prev_sel_name') != sel_name:
+                    sd['prev_sel_name'] = sel_name 
                     
-                sd.base_center = [sd.in_t_la, sd.in_t_lo]
-                sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
-                sd.map_key += 1
-                
-                st.rerun()
+                    sel = res_df.iloc[idx]
+                    sd.target_nm = sel_name
+                    sd.m_mode = "정보 수정"
+                    sd.temp_active = False
+                    sd.show_los_chart = False # 다른 송신소를 누르면 차트 초기화
+                    
+                    sd.in_v_nm = sel['이름']
+                    sd.in_reg_direct = sel['지역']
+                    sd.in_v_cat = sel['구분']
+                    sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
+                    sd.in_v_addr = str(sel['주소'])
+                    sd.in_t_la = safe_float(sel['위도'])
+                    sd.in_t_lo = safe_float(sel['경도'])
+                    
+                    for s in SL: 
+                        sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
+                        
+                    sd.base_center = [sd.in_t_la, sd.in_t_lo]
+                    sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
+                    sd.map_key += 1
+                    
+                    st.rerun()
+        else:
+            # 표 선택을 해제했을 때
+            if sd.get('prev_sel_name') is not None:
+                sd.prev_sel_name = None
 
     c1, c2 = st.columns(2)
     with c1: 
