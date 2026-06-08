@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1042", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1043", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -43,7 +43,7 @@ if 'init' not in sd:
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
         'show_global_coverage': False, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
-        'prev_sel_name': None
+        'prev_sel_name': None # 🚩 무한 루프 차단용 핵심 변수
     })
     for s in SL:
         sd[f"ch_{s}"] = ""
@@ -124,7 +124,6 @@ def get_filtered_sorted_df(df, sel_reg, search_query):
         sort_map = {'송신소': 1, '중계소': 2}
         res = res.copy()
         res['구분_순서'] = res['구분'].map(sort_map).fillna(3)
-        # 🚩 무한 루프 차단용 핵심 1: 정렬 후 Index를 완벽하게 초기화하여 표의 클릭 위치와 데이터 위치를 1:1로 일치시킴
         res = res.sort_values(by=['지역', '구분_순서', '이름']).drop(columns=['구분_순서']).reset_index(drop=True)
     return res
 
@@ -132,41 +131,7 @@ if 'df' not in sd:
     sd.df = load_db()
 
 # -----------------------------------------------------------------------------
-# 4. 표(Table) 선택 연동 로직 (무한 루프 방지 로직 적용)
-# -----------------------------------------------------------------------------
-if 'main_table' in sd and sd.main_table.get("selection", {}).get("rows"):
-    sel_rows = sd.main_table["selection"]["rows"]
-    if sel_rows:
-        idx = sel_rows[0]
-        temp_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
-        
-        if idx < len(temp_df):
-            sel = temp_df.iloc[idx]
-            sel_name = sel['이름']
-            
-            # 🚩 무한 루프 차단용 핵심 2: 사용자가 실제로 다른 시설을 클릭했을 때만 정보 갱신
-            if sd.get('prev_sel_name') != sel_name:
-                sd['prev_sel_name'] = sel_name  
-                
-                sd.target_nm = sel_name
-                sd.m_mode = "정보 수정"
-                sd.temp_active = False
-                sd.show_los_chart = False 
-                sd.in_v_nm, sd.in_reg_direct, sd.in_v_cat = sel['이름'], sel['지역'], sel['구분']
-                sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
-                sd.in_v_addr = str(sel['주소'])
-                sd.in_t_la, sd.in_t_lo = safe_float(sel['위도']), safe_float(sel['경도'])
-                for s in SL: 
-                    sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
-                    
-                sd.base_center = [sd.in_t_la, sd.in_t_lo]
-                sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
-                sd.map_key += 1
-                
-                # 🚩 무한 루프 차단용 핵심 3: 여기서 st.rerun()을 호출하지 않음으로써 표 리셋 오류를 방지함.
-
-# -----------------------------------------------------------------------------
-# 5. 사이드바 UI (대시보드 및 탭)
+# 4. 사이드바 UI (대시보드 및 탭)
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 관제 대시보드")
@@ -219,7 +184,7 @@ with st.sidebar:
     # ---------- TAB 1: 시설 등록/수정 ----------
     with tab1:
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
-        if st.button("🎯 1. 조준경 위치 추출 (신규/수정)"):
+        if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
             sd.base_center = [sd.in_t_la, sd.in_t_lo]
             try:
@@ -232,11 +197,13 @@ with st.sidebar:
             sd.map_key += 1
             st.rerun()
             
-        c_mode, c_rst = st.columns([2, 1])
+        # 🚩 [UI 복구 1]: 사진(image_1421cb)과 동일하게 라디오 버튼과 초기화 버튼 배치 
+        c_mode, c_rst = st.columns([1.5, 1])
         with c_mode: 
             sd.m_mode = st.radio("작업", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True, label_visibility="collapsed")
         with c_rst: 
-            if st.button("🔄 초기화"): 
+            st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+            if st.button("🔄 초기화", use_container_width=True): 
                 sd.m_mode = "신규 등록"
                 sd.target_nm = None
                 sd.prev_sel_name = None 
@@ -307,7 +274,8 @@ with st.sidebar:
 
     # ---------- TAB 2: RF 기술 분석 ----------
     with tab2:
-        st.subheader("🔍 가시권(LOS) 단면도")
+        # 🚩 [UI 복구 2]: 사진(image_141f01)과 동일하게 텍스트 및 버튼 복구
+        st.markdown("### 🔍 가시권(LOS) 단면도")
         if sd.target_nm:
             st.markdown(f"**대상:** {sd.target_nm} ↔ 조준경")
             st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
@@ -339,7 +307,7 @@ with st.sidebar:
 
 
 # -----------------------------------------------------------------------------
-# 6. 메인 화면 렌더링 (지도 및 표)
+# 5. 메인 화면 렌더링 (지도)
 # -----------------------------------------------------------------------------
 res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 
@@ -380,15 +348,21 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}")
+# 🚩 [무한 루프 방지 핵심]: 지도는 오직 return된 center만 수집하고, 재렌더링을 억제합니다.
+map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}", returned_objects=["center"])
 
 if map_res and map_res.get("center"): 
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
+
+# -----------------------------------------------------------------------------
+# 6. 표 데이터 렌더링 및 클릭 이벤트 수집
+# -----------------------------------------------------------------------------
 st.subheader("📊 전국 방송 시설 데이터 현황")
 
 if not res_df.empty:
-    st.dataframe(
+    # 표에서 발생하는 이벤트를 event 변수에 담습니다.
+    event = st.dataframe(
         res_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'};" for _ in row], axis=1), 
         use_container_width=True, 
         on_select="rerun", 
@@ -396,6 +370,39 @@ if not res_df.empty:
         hide_index=True, 
         key="main_table"
     )
+
+    # 🚩 [무한 루프 방지 핵심 2]: 표 클릭 이벤트가 감지되었을 때만 하단에서 후처리하여 1회 갱신합니다.
+    if event and event.selection and event.selection.rows:
+        idx = event.selection.rows[0]
+        if idx < len(res_df):
+            sel_name = res_df.iloc[idx]['이름']
+            
+            # 이전과 다른 이름을 클릭했을 때만 정보 업데이트 및 화면 이동
+            if sd.get('prev_sel_name') != sel_name:
+                sd['prev_sel_name'] = sel_name 
+                
+                sel = res_df.iloc[idx]
+                sd.target_nm = sel_name
+                sd.m_mode = "정보 수정"
+                sd.temp_active = False
+                sd.show_los_chart = False 
+                
+                sd.in_v_nm = sel['이름']
+                sd.in_reg_direct = sel['지역']
+                sd.in_v_cat = sel['구분']
+                sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
+                sd.in_v_addr = str(sel['주소'])
+                sd.in_t_la = safe_float(sel['위도'])
+                sd.in_t_lo = safe_float(sel['경도'])
+                
+                for s in SL: 
+                    sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
+                    
+                sd.base_center = [sd.in_t_la, sd.in_t_lo]
+                sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
+                sd.map_key += 1
+                
+                st.rerun() # 업데이트 후 1회만 화면 새로고침하여 튕김 차단
 
     c1, c2 = st.columns(2)
     with c1: 
