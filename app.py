@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1043", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1044", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -19,6 +19,8 @@ st.markdown("""<style>
     div.element-container:has(.btn-blue) + div.element-container button { background-color: #1971c2 !important; color: white !important; }
     div.element-container:has(.btn-green) + div.element-container button { background-color: #2f9e44 !important; color: white !important; font-size: 16px !important; }
     div.element-container:has(.btn-red) + div.element-container button { background-color: #e03131 !important; color: white !important; }
+    /* 라디오 버튼 간격 조정 */
+    div[role="radiogroup"] { gap: 0rem; }
 </style>""", unsafe_allow_html=True)
 
 # 채널 및 DB 구조 설정
@@ -43,7 +45,7 @@ if 'init' not in sd:
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
         'show_global_coverage': False, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
-        'prev_sel_name': None # 🚩 무한 루프 차단용 핵심 변수
+        'prev_sel_name': None 
     })
     for s in SL:
         sd[f"ch_{s}"] = ""
@@ -183,6 +185,7 @@ with st.sidebar:
 
     # ---------- TAB 1: 시설 등록/수정 ----------
     with tab1:
+        # 🚩 [UI 복구]: 조준경 위치 추출 버튼을 맨 위에 넓게 파란색으로 배치
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
         if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
@@ -197,11 +200,12 @@ with st.sidebar:
             sd.map_key += 1
             st.rerun()
             
-        # 🚩 [UI 복구 1]: 사진(image_1421cb)과 동일하게 라디오 버튼과 초기화 버튼 배치 
-        c_mode, c_rst = st.columns([1.5, 1])
+        # 🚩 [UI 복구]: 사진(image_1421cb) 비율과 완벽히 일치하도록 3:1 배열 적용
+        c_mode, c_rst = st.columns([3, 1])
         with c_mode: 
             sd.m_mode = st.radio("작업", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True, label_visibility="collapsed")
         with c_rst: 
+            # 버튼 위아래 여백을 맞추기 위한 빈 공간 삽입
             st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
             if st.button("🔄 초기화", use_container_width=True): 
                 sd.m_mode = "신규 등록"
@@ -274,14 +278,19 @@ with st.sidebar:
 
     # ---------- TAB 2: RF 기술 분석 ----------
     with tab2:
-        # 🚩 [UI 복구 2]: 사진(image_141f01)과 동일하게 텍스트 및 버튼 복구
         st.markdown("### 🔍 가시권(LOS) 단면도")
-        if sd.target_nm:
-            st.markdown(f"**대상:** {sd.target_nm} ↔ 조준경")
-            st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
-            if st.button("🚀 가시선 분석 실행 (대상 ↔ 조준경)", use_container_width=True):
+        
+        # 🚩 [기능 복구]: 버튼은 항상 노출시켜서 고장난 것처럼 보이지 않게 함
+        st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
+        if st.button("🚀 가시선 분석 실행 (대상 ↔ 조준경)", use_container_width=True):
+            if sd.target_nm:
                 sd.show_los_chart = True
+            else:
+                # 대상을 선택 안 하고 누르면 친절하게 알림
+                st.toast("하단 표에서 기준 송신소를 먼저 클릭(선택)하세요!", icon="⚠️")
                 
+        if sd.target_nm:
+            st.markdown(f"**현재 대상:** <span style='color:#1864ab; font-weight:bold;'>{sd.target_nm}</span>", unsafe_allow_html=True)
             if sd.show_los_chart:
                 dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
                 bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
@@ -348,7 +357,7 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-# 🚩 [무한 루프 방지 핵심]: 지도는 오직 return된 center만 수집하고, 재렌더링을 억제합니다.
+# 🚩 [무한 루프 방지 핵심]: 지도는 return된 center만 수집
 map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}", returned_objects=["center"])
 
 if map_res and map_res.get("center"): 
@@ -356,12 +365,11 @@ if map_res and map_res.get("center"):
 
 
 # -----------------------------------------------------------------------------
-# 6. 표 데이터 렌더링 및 클릭 이벤트 수집
+# 6. 표 데이터 렌더링 및 클릭 이벤트 수집 (무한 루프 방지 로직 유지)
 # -----------------------------------------------------------------------------
 st.subheader("📊 전국 방송 시설 데이터 현황")
 
 if not res_df.empty:
-    # 표에서 발생하는 이벤트를 event 변수에 담습니다.
     event = st.dataframe(
         res_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'};" for _ in row], axis=1), 
         use_container_width=True, 
@@ -371,13 +379,11 @@ if not res_df.empty:
         key="main_table"
     )
 
-    # 🚩 [무한 루프 방지 핵심 2]: 표 클릭 이벤트가 감지되었을 때만 하단에서 후처리하여 1회 갱신합니다.
     if event and event.selection and event.selection.rows:
         idx = event.selection.rows[0]
         if idx < len(res_df):
             sel_name = res_df.iloc[idx]['이름']
             
-            # 이전과 다른 이름을 클릭했을 때만 정보 업데이트 및 화면 이동
             if sd.get('prev_sel_name') != sel_name:
                 sd['prev_sel_name'] = sel_name 
                 
@@ -402,7 +408,7 @@ if not res_df.empty:
                 sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
                 sd.map_key += 1
                 
-                st.rerun() # 업데이트 후 1회만 화면 새로고침하여 튕김 차단
+                st.rerun()
 
     c1, c2 = st.columns(2)
     with c1: 
