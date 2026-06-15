@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1050", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1051", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,11 +22,11 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 채널 및 DB 구조 설정
+# 🚩 [수정 포인트]: 홈페이지 공식 명칭 기준으로 FM 채널 리스트 전면 개편
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
-SL_FM = ['KBS1-FM', 'KBS2-FM', 'KBS-Music', 'MBC-FM', 'MBC-AM', 'KNN-FM', 'EBS-FM', '교통방송', '국악방송', '불교방송', '평화방송', '기독교방송']
+SL_FM = ['KBS 1R', 'KBS 2R', 'KBS 음악FM', 'MBC 1FM', 'MBC 2FM', 'KNN 파워FM', 'KNN 러브FM', 'EBS FM', '교통방송', '국악방송', '불교방송', '기독교방송']
 SL = SL_DTV + SL_UHD + SL_DMB + SL_FM
 CL = ['지역', '구분', '이름', '커버리지'] + SL + ['위도', '경도', '주소']
 DB = 'stations.csv'
@@ -359,7 +359,7 @@ st.subheader("📊 전국 방송 시설 데이터 현황")
 
 if not res_df.empty:
     
-    # 🚩 [핵심 UI 수정]: 화면 표출용 데이터를 새로 만들어 DTV, UHD, DMB, 커버리지의 소수점을 제거합니다. (FM 제외)
+    # DTV, UHD, DMB의 소수점을 깔끔하게 제거 (FM 채널은 소수점 유지)
     display_df = res_df.copy()
     cols_to_clean = ['커버리지'] + SL_DTV + SL_UHD + SL_DMB
     for c in cols_to_clean:
