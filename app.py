@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1049", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1050", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -191,10 +191,8 @@ with st.sidebar:
                 if loc: sd.in_v_addr = loc.address
             except: pass
             
-            # 🚩 [핵심 수정]: 신규/수정에 상관없이 무조건 임시 마커를 생성하여 시각적 확인 보장
             sd.temp_active = True
             sd.temp_lat, sd.temp_lon = sd.crosshair_center
-            
             sd.map_key += 1
             st.toast("📍 조준경 위치가 성공적으로 추출되었습니다!", icon="✅")
             st.rerun()
@@ -232,8 +230,6 @@ with st.sidebar:
             sd.in_v_cov = st.number_input("커버리지(km)", value=float(sd.in_v_cov), step=1.0)
         
         sd.in_v_addr = st.text_area("주소", value=sd.in_v_addr, height=70)
-        
-        # 🚩 [추가 기능]: 추출된 정확한 좌표를 눈으로 직접 확인할 수 있도록 표시
         st.caption(f"📍 **현재 설정된 좌표:** {sd.in_t_la:.6f}, {sd.in_t_lo:.6f}")
 
         with st.expander("📺 DTV & UHD 채널 입력", expanded=True):
@@ -362,8 +358,16 @@ if map_res and map_res.get("center"):
 st.subheader("📊 전국 방송 시설 데이터 현황")
 
 if not res_df.empty:
+    
+    # 🚩 [핵심 UI 수정]: 화면 표출용 데이터를 새로 만들어 DTV, UHD, DMB, 커버리지의 소수점을 제거합니다. (FM 제외)
+    display_df = res_df.copy()
+    cols_to_clean = ['커버리지'] + SL_DTV + SL_UHD + SL_DMB
+    for c in cols_to_clean:
+        if c in display_df.columns:
+            display_df[c] = display_df[c].apply(lambda x: str(int(float(x))) if str(x).replace('.', '', 1).isdigit() and float(x).is_integer() else x)
+
     event = st.dataframe(
-        res_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'};" for _ in row], axis=1), 
+        display_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'};" for _ in row], axis=1), 
         use_container_width=True, 
         on_select="rerun", 
         selection_mode="single-row", 
@@ -402,6 +406,9 @@ if not res_df.empty:
                     sd.map_key += 1
                     
                     st.rerun()
+        else:
+            if sd.get('prev_sel_name') is not None:
+                sd.prev_sel_name = None
 
     c1, c2 = st.columns(2)
     with c1: 
