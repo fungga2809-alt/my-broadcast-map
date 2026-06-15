@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1045", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1049", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -167,7 +167,6 @@ with st.sidebar:
                 sd.crosshair_center = list(lat_lon)
                 sd.map_jump_q = jump_q
                 sd.map_key += 1
-                st.rerun()
             else:
                 loc = Nominatim(user_agent="b_master").geocode(jump_q)
                 if loc: 
@@ -175,7 +174,6 @@ with st.sidebar:
                     sd.crosshair_center = [loc.latitude, loc.longitude]
                     sd.map_jump_q = jump_q
                     sd.map_key += 1
-                    st.rerun()
                 else: 
                     st.toast("검색 실패! 구글지도에서 좌표를 복사해서 넣어주세요.", icon="❌")
 
@@ -184,7 +182,6 @@ with st.sidebar:
 
     # ---------- TAB 1: 시설 등록/수정 ----------
     with tab1:
-        # 🚩 [UI 복구 1]: 버튼을 상하로 나란히 동일한 크기로 배치
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
         if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
@@ -193,10 +190,13 @@ with st.sidebar:
                 loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
                 if loc: sd.in_v_addr = loc.address
             except: pass
-            if sd.m_mode == "신규 등록": 
-                sd.temp_active = True
-                sd.temp_lat, sd.temp_lon = sd.crosshair_center
+            
+            # 🚩 [핵심 수정]: 신규/수정에 상관없이 무조건 임시 마커를 생성하여 시각적 확인 보장
+            sd.temp_active = True
+            sd.temp_lat, sd.temp_lon = sd.crosshair_center
+            
             sd.map_key += 1
+            st.toast("📍 조준경 위치가 성공적으로 추출되었습니다!", icon="✅")
             st.rerun()
             
         if st.button("🔄 2. 입력창 초기화", use_container_width=True): 
@@ -209,7 +209,6 @@ with st.sidebar:
             sd.show_los_chart = False
             st.rerun()
 
-        # 라디오 버튼은 그 아래로 분리
         st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
         sd.m_mode = st.radio("작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
 
@@ -233,6 +232,9 @@ with st.sidebar:
             sd.in_v_cov = st.number_input("커버리지(km)", value=float(sd.in_v_cov), step=1.0)
         
         sd.in_v_addr = st.text_area("주소", value=sd.in_v_addr, height=70)
+        
+        # 🚩 [추가 기능]: 추출된 정확한 좌표를 눈으로 직접 확인할 수 있도록 표시
+        st.caption(f"📍 **현재 설정된 좌표:** {sd.in_t_la:.6f}, {sd.in_t_lo:.6f}")
 
         with st.expander("📺 DTV & UHD 채널 입력", expanded=True):
             c1, c2 = st.columns(2)
@@ -280,7 +282,6 @@ with st.sidebar:
         if sd.target_nm:
             st.markdown(f"**현재 대상:** <span style='color:#1864ab; font-weight:bold;'>{sd.target_nm}</span>", unsafe_allow_html=True)
             
-            # 🚩 [UI 복구 2]: 2초 후 꺼짐 현상을 영구적으로 방지하기 위해 일반 버튼을 토글 스위치로 변경
             sd.show_los_chart = st.toggle("🚀 가시선 분석 켜기 (대상 ↔ 조준경)", value=sd.show_los_chart)
             
             if sd.show_los_chart:
@@ -349,7 +350,6 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-# 지도 이벤트 처리 (중심점 이동 시 좌표 갱신)
 map_res = st_folium(m, use_container_width=True, height=800, key=f"map_{sd.map_key}", returned_objects=["center"])
 
 if map_res and map_res.get("center"): 
@@ -357,7 +357,7 @@ if map_res and map_res.get("center"):
 
 
 # -----------------------------------------------------------------------------
-# 6. 표 데이터 렌더링 및 클릭 이벤트 (무한 루프 방지 로직)
+# 6. 표 데이터 렌더링 및 클릭 이벤트
 # -----------------------------------------------------------------------------
 st.subheader("📊 전국 방송 시설 데이터 현황")
 
@@ -377,7 +377,6 @@ if not res_df.empty:
             if idx < len(res_df):
                 sel_name = res_df.iloc[idx]['이름']
                 
-                # 표에서 다른 시설을 클릭했을 때만 정보 갱신 (무한 루프 차단)
                 if sd.get('prev_sel_name') != sel_name:
                     sd['prev_sel_name'] = sel_name 
                     
@@ -385,7 +384,7 @@ if not res_df.empty:
                     sd.target_nm = sel_name
                     sd.m_mode = "정보 수정"
                     sd.temp_active = False
-                    sd.show_los_chart = False # 다른 송신소를 누르면 차트 초기화
+                    sd.show_los_chart = False 
                     
                     sd.in_v_nm = sel['이름']
                     sd.in_reg_direct = sel['지역']
@@ -403,10 +402,6 @@ if not res_df.empty:
                     sd.map_key += 1
                     
                     st.rerun()
-        else:
-            # 표 선택을 해제했을 때
-            if sd.get('prev_sel_name') is not None:
-                sd.prev_sel_name = None
 
     c1, c2 = st.columns(2)
     with c1: 
