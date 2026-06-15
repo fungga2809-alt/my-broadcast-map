@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1052", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1054", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,18 +22,25 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 채널 및 DB 구조 설정 (공식 명칭 적용)
+# 🚩 [완벽 세분화 적용]: 종교방송, 교통방송 등 전문가님이 정리하신 리스트 반영
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
-SL_FM = ['KBS 1R', 'KBS 2R', 'KBS 음악FM', 'MBC 1FM', 'MBC 2FM', 'KNN 파워FM', 'KNN 러브FM', 'EBS FM', '교통방송', '국악방송', '불교방송', '기독교방송']
+SL_FM = [
+    'KBS 1R', 'KBS 2R', 'KBS 음악FM', 
+    'MBC 1FM', 'MBC 2FM', 
+    'KNN 파워FM', 'KNN 러브FM', 'EBS FM', 
+    'CBS 표준FM', 'CBS 음악FM', 'FEBC 극동방송', 
+    '교통방송', '교통방송 eFM', 
+    '국악방송', 'BBS 불교방송'
+]
 SL = SL_DTV + SL_UHD + SL_DMB + SL_FM
 CL = ['지역', '구분', '이름', '커버리지'] + SL + ['위도', '경도', '주소']
 DB = 'stations.csv'
 sd = st.session_state
 
 # -----------------------------------------------------------------------------
-# 2. 세션 상태(Session State) 안전 초기화
+# 2. 세션 상태 안전 초기화 (강력한 메모리 유지 및 에러 방어)
 # -----------------------------------------------------------------------------
 if 'init' not in sd:
     sd.update({
@@ -48,7 +55,6 @@ if 'init' not in sd:
     })
     sd['init'] = True
 
-# 🚩 [KeyError 완벽 방어]: 채널 항목이 변경되더라도 자동으로 빈칸 생성
 for s in SL:
     if f"ch_{s}" not in sd:
         sd[f"ch_{s}"] = ""
@@ -206,13 +212,14 @@ with st.sidebar:
             sd.prev_sel_name = None 
             sd.in_v_nm = ""
             sd.in_v_cov = 0.0
+            sd.in_reg_direct = ""
             sd.temp_active = False
             sd.show_los_chart = False
             for s in SL: sd[f"ch_{s}"] = ""
             st.rerun()
 
         st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
-        sd.m_mode = st.radio("작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], index=["신규 등록", "정보 수정", "데이터 삭제"].index(sd.m_mode), horizontal=True)
+        st.radio("작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], key="m_mode", horizontal=True)
 
         if sd.m_mode == "데이터 삭제":
             st.error(f"'{sd.target_nm}' 시설을 영구 삭제합니다.")
@@ -224,39 +231,39 @@ with st.sidebar:
                 sd.prev_sel_name = None
                 st.rerun()
 
-        sd.in_reg_direct = st.text_input("지역", value=sd.in_reg_direct)
-        sd.in_v_nm = st.text_input("시설명", value=sd.in_v_nm)
+        st.text_input("지역", key="in_reg_direct")
+        st.text_input("시설명", key="in_v_nm")
         
         c_cat, c_cov = st.columns(2)
         with c_cat: 
-            sd.in_v_cat = st.radio("구분", ["송신소", "중계소"], index=0 if sd.in_v_cat == "송신소" else 1, horizontal=True)
+            st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
         with c_cov: 
-            sd.in_v_cov = st.number_input("커버리지(km)", value=float(sd.in_v_cov), step=1.0)
+            st.number_input("커버리지(km)", key="in_v_cov", step=1.0)
         
-        sd.in_v_addr = st.text_area("주소", value=sd.in_v_addr, height=70)
+        st.text_area("주소", key="in_v_addr", height=70)
         st.caption(f"📍 **현재 설정된 좌표:** {sd.in_t_la:.6f}, {sd.in_t_lo:.6f}")
 
         with st.expander("📺 DTV & UHD 채널 입력", expanded=True):
             c1, c2 = st.columns(2)
             with c1: 
                 st.markdown("**DTV**")
-                for s in SL_DTV: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
+                for s in SL_DTV: st.text_input(s, key=f"ch_{s}")
             with c2: 
                 st.markdown("**UHD**")
-                for s in SL_UHD: sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"])
+                for s in SL_UHD: st.text_input(s, key=f"ch_{s}")
                 
         with st.expander("📻 DMB & FM 라디오 채널 입력", expanded=True):
             st.markdown("**DMB**")
             c_dmb1, c_dmb2, c_dmb3 = st.columns(3)
-            with c_dmb1: sd[f"ch_{SL_DMB[0]}"] = st.text_input(SL_DMB[0], value=sd[f"ch_{SL_DMB[0]}"])
-            with c_dmb2: sd[f"ch_{SL_DMB[1]}"] = st.text_input(SL_DMB[1], value=sd[f"ch_{SL_DMB[1]}"])
-            with c_dmb3: sd[f"ch_{SL_DMB[2]}"] = st.text_input(SL_DMB[2], value=sd[f"ch_{SL_DMB[2]}"])
+            with c_dmb1: st.text_input(SL_DMB[0], key=f"ch_{SL_DMB[0]}")
+            with c_dmb2: st.text_input(SL_DMB[1], key=f"ch_{SL_DMB[1]}")
+            with c_dmb3: st.text_input(SL_DMB[2], key=f"ch_{SL_DMB[2]}")
             
             st.markdown("**FM 라디오**")
             c_fm1, c_fm2 = st.columns(2)
             for i, s in enumerate(SL_FM):
                 with c_fm1 if i % 2 == 0 else c_fm2:
-                    sd[f"ch_{s}"] = st.text_input(s, value=sd[f"ch_{s}"]) 
+                    st.text_input(s, key=f"ch_{s}") 
 
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
         if st.button("✅ 3. 데이터 통합 저장", use_container_width=True):
@@ -270,10 +277,10 @@ with st.sidebar:
                 sd.target_nm = sd.in_v_nm
                 sd.prev_sel_name = sd.in_v_nm
                 sd.temp_active = False
-                st.success("저장 완료!")
+                st.success("데이터가 완벽하게 저장되었습니다!")
                 st.rerun()
             else: 
-                st.error("지역과 시설명을 입력하세요.")
+                st.error(f"오류: 지역명({sd.in_reg_direct}) 또는 시설명({sd.in_v_nm})이 비어있습니다. 위쪽 입력창을 확인해주세요.")
 
     # ---------- TAB 2: RF 기술 분석 ----------
     with tab2:
@@ -402,16 +409,14 @@ if not res_df.empty:
                     sd.in_t_la = safe_float(sel['위도'])
                     sd.in_t_lo = safe_float(sel['경도'])
                     
-                    # 🚩 [핵심 수정]: 표를 클릭해서 입력창으로 데이터를 가져올 때 소수점 완벽 제거
                     for s in SL: 
                         raw_val = str(sel[s]).strip() if s in sel else ""
-                        # FM 채널이 아닐 경우에만 소수점 제거 로직 실행
                         if s not in SL_FM and raw_val != "":
                             try:
                                 if float(raw_val).is_integer():
                                     raw_val = str(int(float(raw_val)))
                             except:
-                                pass # K-12 같은 문자열은 무시하고 그대로 패스
+                                pass
                         sd[f"ch_{s}"] = raw_val
                         
                     sd.base_center = [sd.in_t_la, sd.in_t_lo]
