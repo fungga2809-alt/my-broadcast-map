@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1054", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1055", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,7 +22,7 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 🚩 [완벽 세분화 적용]: 종교방송, 교통방송 등 전문가님이 정리하신 리스트 반영
+# 채널 및 DB 구조 설정
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -51,13 +51,36 @@ if 'init' not in sd:
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
         'show_global_coverage': False, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
-        'prev_sel_name': None 
+        'prev_sel_name': None,
+        'pending_update': None  # 🚩 버퍼 메모리 생성
     })
     sd['init'] = True
 
 for s in SL:
     if f"ch_{s}" not in sd:
         sd[f"ch_{s}"] = ""
+
+# 🚩 [에러 완벽 차단 로직]: 표 클릭 시 저장해둔 데이터를 화면을 그리기 전에 미리 적용합니다.
+if sd.get('pending_update'):
+    sel = sd.pending_update
+    sd.m_mode = "정보 수정"
+    sd.in_v_nm = sel.get('이름', "")
+    sd.in_reg_direct = sel.get('지역', "")
+    sd.in_v_cat = sel.get('구분', "송신소")
+    try: sd.in_v_cov = float(sel.get('커버리지', 0.0)) if str(sel.get('커버리지', '')).strip() != "" else 0.0
+    except: sd.in_v_cov = 0.0
+    sd.in_v_addr = str(sel.get('주소', ""))
+    
+    for s in SL: 
+        raw_val = str(sel.get(s, "")).strip()
+        if s not in SL_FM and raw_val != "":
+            try:
+                if float(raw_val).is_integer():
+                    raw_val = str(int(float(raw_val)))
+            except: pass
+        sd[f"ch_{s}"] = raw_val
+        
+    sd.pending_update = None # 데이터 적용 후 버퍼 비우기
 
 # -----------------------------------------------------------------------------
 # 3. 핵심 함수 (DB 로드/저장, RF 분석 등)
@@ -211,8 +234,8 @@ with st.sidebar:
             sd.target_nm = None
             sd.prev_sel_name = None 
             sd.in_v_nm = ""
-            sd.in_v_cov = 0.0
             sd.in_reg_direct = ""
+            sd.in_v_cov = 0.0
             sd.temp_active = False
             sd.show_los_chart = False
             for s in SL: sd[f"ch_{s}"] = ""
@@ -397,31 +420,17 @@ if not res_df.empty:
                     
                     sel = res_df.iloc[idx]
                     sd.target_nm = sel_name
-                    sd.m_mode = "정보 수정"
                     sd.temp_active = False
                     sd.show_los_chart = False 
                     
-                    sd.in_v_nm = sel['이름']
-                    sd.in_reg_direct = sel['지역']
-                    sd.in_v_cat = sel['구분']
-                    sd.in_v_cov = safe_float(sel.get('커버리지', 0.0))
-                    sd.in_v_addr = str(sel['주소'])
-                    sd.in_t_la = safe_float(sel['위도'])
-                    sd.in_t_lo = safe_float(sel['경도'])
-                    
-                    for s in SL: 
-                        raw_val = str(sel[s]).strip() if s in sel else ""
-                        if s not in SL_FM and raw_val != "":
-                            try:
-                                if float(raw_val).is_integer():
-                                    raw_val = str(int(float(raw_val)))
-                            except:
-                                pass
-                        sd[f"ch_{s}"] = raw_val
-                        
+                    sd.in_t_la = safe_float(sel.get('위도', 0.0))
+                    sd.in_t_lo = safe_float(sel.get('경도', 0.0))
                     sd.base_center = [sd.in_t_la, sd.in_t_lo]
                     sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
                     sd.map_key += 1
+                    
+                    # 🚩 [에러 원천 차단]: 직접 위젯을 건드리지 않고 버퍼에 저장한 뒤 안전하게 재부팅!
+                    sd.pending_update = sel.to_dict()
                     
                     st.rerun()
         else:
