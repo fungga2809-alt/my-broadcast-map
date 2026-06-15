@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1051", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1052", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,7 +22,7 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 🚩 [수정 포인트]: 홈페이지 공식 명칭 기준으로 FM 채널 리스트 전면 개편
+# 채널 및 DB 구조 설정 (공식 명칭 적용)
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -46,9 +46,12 @@ if 'init' not in sd:
         'show_global_coverage': False, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
         'prev_sel_name': None 
     })
-    for s in SL:
-        sd[f"ch_{s}"] = ""
     sd['init'] = True
+
+# 🚩 [KeyError 완벽 방어]: 채널 항목이 변경되더라도 자동으로 빈칸 생성
+for s in SL:
+    if f"ch_{s}" not in sd:
+        sd[f"ch_{s}"] = ""
 
 # -----------------------------------------------------------------------------
 # 3. 핵심 함수 (DB 로드/저장, RF 분석 등)
@@ -205,6 +208,7 @@ with st.sidebar:
             sd.in_v_cov = 0.0
             sd.temp_active = False
             sd.show_los_chart = False
+            for s in SL: sd[f"ch_{s}"] = ""
             st.rerun()
 
         st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
@@ -359,7 +363,7 @@ st.subheader("📊 전국 방송 시설 데이터 현황")
 
 if not res_df.empty:
     
-    # DTV, UHD, DMB의 소수점을 깔끔하게 제거 (FM 채널은 소수점 유지)
+    # 데이터 현황판(표) 소수점 제거 (FM 제외)
     display_df = res_df.copy()
     cols_to_clean = ['커버리지'] + SL_DTV + SL_UHD + SL_DMB
     for c in cols_to_clean:
@@ -398,8 +402,17 @@ if not res_df.empty:
                     sd.in_t_la = safe_float(sel['위도'])
                     sd.in_t_lo = safe_float(sel['경도'])
                     
+                    # 🚩 [핵심 수정]: 표를 클릭해서 입력창으로 데이터를 가져올 때 소수점 완벽 제거
                     for s in SL: 
-                        sd[f"ch_{s}"] = str(sel[s]) if s in sel else ""
+                        raw_val = str(sel[s]).strip() if s in sel else ""
+                        # FM 채널이 아닐 경우에만 소수점 제거 로직 실행
+                        if s not in SL_FM and raw_val != "":
+                            try:
+                                if float(raw_val).is_integer():
+                                    raw_val = str(int(float(raw_val)))
+                            except:
+                                pass # K-12 같은 문자열은 무시하고 그대로 패스
+                        sd[f"ch_{s}"] = raw_val
                         
                     sd.base_center = [sd.in_t_la, sd.in_t_lo]
                     sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
