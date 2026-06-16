@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1060", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1061", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,7 +22,7 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 채널 및 DB 구조 확장 설정 (라디오 채널 수 대폭 확대)
+# 채널 및 DB 구조 확장 설정
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -84,13 +84,10 @@ if sd.get('pending_update'):
     sd.pending_update = None
 
 # -----------------------------------------------------------------------------
-# 3. 핵심 기능 함수 (인증키 프리 전국 라디오 주파수 고속 매핑 엔진)
+# 3. 핵심 기능 함수
 # -----------------------------------------------------------------------------
 def grab_all_radio_frequencies_keyless(sido_nm, sgg_nm):
-    """ 인증키 대기 없이 행정구역 기반으로 전국 라디오 주파수 대역을 즉시 파싱 및 추출하는 엔진 """
     full_text = f"{sido_nm} {sgg_nm}"
-    
-    # 전국 주요 방송권역별 RF 마스터 매핑 테이블
     rf_matrix = {
         "부산": {
             'KBS 1R': '103.7', 'KBS 2R': '97.1', 'KBS 3R': '97.1', 'KBS 클래식FM': '92.7', 'KBS 쿨FM': '97.1', 'KBS 해피FM': '97.1',
@@ -127,8 +124,6 @@ def grab_all_radio_frequencies_keyless(sido_nm, sgg_nm):
             '국악방송': '99.1', '국방FM': '96.7'
         }
     }
-    
-    # 입력된 행정구역 매칭 판별
     matched_set = {k: "" for k in SL_FM}
     found = False
     for key, data in rf_matrix.items():
@@ -136,8 +131,6 @@ def grab_all_radio_frequencies_keyless(sido_nm, sgg_nm):
             matched_set.update(data)
             found = True
             break
-            
-    # 매칭되는 특수 구역이 없을 경우 전국 평균 표준 디폴트값 세팅 (예외 대피용)
     if not found:
         matched_set.update({
             'KBS 1R': '91.7', 'KBS 2R': '106.1', 'MBC 표준FM': '95.9', 'MBC FM4U': '100.0',
@@ -261,7 +254,7 @@ with st.sidebar:
     st.divider()
     tab1, tab2 = st.tabs(["📝 시설 관리", "📡 RF 분석"])
 
-    # ---------- TAB 1: 시설 등록/수정 (자동 수집 포함) ----------
+    # ---------- TAB 1: 시설 등록/수정 ----------
     with tab1:
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
         if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
@@ -289,6 +282,19 @@ with st.sidebar:
             for s in SL: sd[f"ch_{s}"] = ""
             st.rerun()
 
+        # 🔥 [복구 완료] 특정 송신소 체크 및 좌표 복사 패널 🔥
+        if sd.in_t_la != 0.0 and sd.in_t_lo != 0.0:
+            st.markdown("<div style='padding:5px 0;'>", unsafe_allow_html=True)
+            st.markdown(f"**📋 위치 정보 원클릭 복사** ({sd.target_nm if sd.target_nm else '신규 위치'})")
+            c_copy1, c_copy2 = st.columns(2)
+            with c_copy1:
+                st.caption("📍 좌표 (위도, 경도)")
+                st.code(f"{sd.in_t_la}, {sd.in_t_lo}", language="text")
+            with c_copy2:
+                st.caption("🏠 주소")
+                st.code(f"{sd.in_v_addr}" if sd.in_v_addr else "주소 정보 없음", language="text")
+            st.markdown("</div>", unsafe_allow_html=True)
+
         st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
         st.radio("작업 모드 선택", ["신규 등록", "정보 수정", "데이터 삭제"], key="m_mode", horizontal=True)
 
@@ -304,7 +310,6 @@ with st.sidebar:
 
         st.text_input("지역 (장부 분류용)", key="in_reg_direct")
         
-        # 🚩 [초고속 프리 패스]: 인증키 없는 고속 주파수 스크래핑 제어기
         with st.expander("📻 프리패스 라디오 주파수 즉시 추출", expanded=True):
             st.text_input("시/도 (예: 부산광역시)", key="api_sido")
             st.text_input("시/군/구 (예: 연제구)", key="api_sgg")
@@ -318,7 +323,7 @@ with st.sidebar:
                                 sd[f"ch_{k}"] = v
                                 count += 1
                         if count > 0:
-                            st.success(f"총 {count}개 확장 채널 주파수 로드 완료! 아래 저장 시 시트 자동 복사")
+                            st.success(f"총 {count}개 확장 채널 주파수 로드 완료!")
                             st.rerun()
                 else: st.error("최소 시/도 정보를 입력해 주십시오.")
 
@@ -326,7 +331,7 @@ with st.sidebar:
         c_cat, c_cov = st.columns(2)
         with c_cat: st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
         with c_cov: st.number_input("커버리지(km)", key="in_v_cov", step=1.0)
-        st.text_area("주소", key="in_v_addr", height=70)
+        st.text_area("주소 입력 (수동 편집 가능)", key="in_v_addr", height=70)
 
         with st.expander("📺 DTV & UHD 채널 입력"):
             c1, c2 = st.columns(2)
@@ -344,7 +349,7 @@ with st.sidebar:
             with c_dmb2: st.text_input(SL_DMB[1], key=f"ch_{SL_DMB[1]}")
             with c_dmb3: st.text_input(SL_DMB[2], key=f"ch_{SL_DMB[2]}")
             
-            st.markdown(f"**FM 라디오 (총 {len(SL_FM)}개 확장 채널)**")
+            st.markdown(f"**FM 라디오 (총 {len(SL_FM)}개 채널)**")
             c_fm1, c_fm2 = st.columns(2)
             for i, s in enumerate(SL_FM):
                 with c_fm1 if i % 2 == 0 else c_fm2: st.text_input(s, key=f"ch_{s}") 
@@ -361,7 +366,7 @@ with st.sidebar:
                 sd.target_nm = sd.in_v_nm
                 sd.prev_sel_name = sd.in_v_nm
                 sd.temp_active = False
-                st.success("새로운 확장 채널 데이터가 구글 클라우드 시트에 완벽하게 연동 동기화되었습니다!")
+                st.success("데이터가 구글 클라우드 시트에 성공적으로 동기화되었습니다!")
                 st.rerun()
             else: st.error("지역명 또는 시설명이 비어있습니다.")
 
@@ -392,7 +397,7 @@ with st.sidebar:
         st.success(f"CH {ch} 중심 주파수 = **{473 + (ch-14)*6} MHz**")
 
 # -----------------------------------------------------------------------------
-# 5. 메인 화면 렌더링 ( folium 지도 관제부)
+# 5. 메인 화면 렌더링 (folium 지도)
 # -----------------------------------------------------------------------------
 res_df = get_filtered_sorted_df(sd.df, sd.sel_reg, sd.ch_search)
 l_map = {"일반": "m", "위성": "s", "위성+이름": "y"}
@@ -431,9 +436,9 @@ if map_res and map_res.get("center"):
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
 # -----------------------------------------------------------------------------
-# 6. 표 데이터 렌더링 및 클립보드 복사 시스템
+# 6. 표 데이터 렌더링 및 다운로드
 # -----------------------------------------------------------------------------
-st.subheader("📊 전국 방송 시설 데이터 현황 (마우스 드래그로 셀 복사 가능)")
+st.subheader("📊 전국 방송 시설 데이터 현황")
 if not res_df.empty:
     display_df = res_df.copy()
     cols_to_clean = ['커버리지'] + SL_DTV + SL_UHD + SL_DMB
@@ -441,7 +446,6 @@ if not res_df.empty:
         if c in display_df.columns:
             display_df[c] = display_df[c].apply(lambda x: str(int(float(x))) if str(x).replace('.', '', 1).isdigit() and float(x).is_integer() else x)
 
-    # 스트림릿 내장 데이터프레임으로 클릭 및 드래그 복사 완벽 지원
     event = st.dataframe(
         display_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'};" for _ in row], axis=1), 
         use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table"
