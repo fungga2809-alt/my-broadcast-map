@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1064", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1065", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -235,11 +235,10 @@ with st.sidebar:
     st.header("⚙️ 관제 대시보드")
     sd.gs_sync_on = st.toggle("🌐 클라우드 연동", value=sd.gs_sync_on)
     
-    # 🔥 수정 1: 조준경 상태 변화를 감지하고 즉시 맵을 리렌더링하는 완벽한 토글 로직 🔥
     new_crosshair_state = st.toggle("🎯 화면 중앙 조준경 켜기", value=sd.show_crosshair)
     if new_crosshair_state != sd.show_crosshair:
         sd.show_crosshair = new_crosshair_state
-        sd.map_key += 1  # 맵을 완전히 새로 고쳐서 캐시된 십자선을 날려버림
+        sd.map_key += 1
         st.rerun()
 
     sd.map_layer = st.radio("지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
@@ -249,9 +248,9 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 내 장부 검색", placeholder="저장된 시설명, 채널 등")
 
-    # 🔥 수정 2: 눈에 띄는 안내 문구 추가 🔥
+    # 🔥 수정된 강력한 경고 문구 (카카오, 네이버, 구글맵 복사 불가 명시) 🔥
     st.markdown("**🌍 원하는 위치로 지도 이동**")
-    st.warning("🚨 **오픈 API 지도 특성상 주소 검색이 제한적**입니다. **구글 어스(Google Earth)**나 카카오맵에서 확인한 **'좌표(위도, 경도)'를 복사**해서 입력해 주세요!", icon="📌")
+    st.warning("🚨 **일반 지도(네이버, 카카오, 구글맵)는 좌표 복사가 안 됩니다.** **구글 어스(Google Earth)** 프로그램에서 확인한 **'좌표(위도, 경도)'를 복사**해서 아래에 입력해 주세요!", icon="📌")
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
         with c_jmp: jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="예: 35.1796, 129.0756", label_visibility="collapsed")
@@ -272,7 +271,7 @@ with st.sidebar:
                     sd.map_jump_q = jump_q
                     sd.map_key += 1
                     st.rerun()
-                else: st.toast("검색 실패! 구글지도에서 좌표를 복사해서 넣어주세요.", icon="❌")
+                else: st.toast("검색 실패! 구글 어스에서 좌표를 복사해서 넣어주세요.", icon="❌")
 
     st.divider()
     tab1, tab2 = st.tabs(["📝 시설 관리", "📡 RF 분석"])
@@ -305,6 +304,7 @@ with st.sidebar:
             for s in SL: sd[f"ch_{s}"] = ""
             st.rerun()
 
+        # 🔥 에러 픽스: 위젯 렌더링 전 메모리 안전 호출 방식(.get) 적용 🔥
         if sd.in_t_la != 0.0 and sd.in_t_lo != 0.0:
             st.markdown("<div style='padding:5px 0;'>", unsafe_allow_html=True)
             st.markdown(f"**📋 위치 정보 원클릭 복사** ({sd.target_nm if sd.target_nm else '신규 위치'})")
@@ -314,7 +314,8 @@ with st.sidebar:
                 st.code(f"{sd.in_t_la}, {sd.in_t_lo}", language="text")
             with c_copy2:
                 st.caption("🏠 주소")
-                st.code(f"{sd.in_v_addr}" if sd.in_v_addr else "주소 정보 없음", language="text")
+                addr_text = sd.get("in_v_addr", "")
+                st.code(addr_text if addr_text else "주소 정보 없음", language="text")
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
@@ -452,12 +453,11 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-# 🔥 맵을 새로고침해도 이전에 보고 있던 좌표와 확대 비율을 그대로 유지해주는 백업 코드 추가 🔥
 map_res = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center", "zoom"])
 if map_res:
     if map_res.get("center"): 
         sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
-        sd.base_center = sd.crosshair_center  # 화면을 새로고침할 때 엉뚱한 곳으로 튀는 것 방지
+        sd.base_center = sd.crosshair_center  
     if map_res.get("zoom"):
         sd.base_zoom = map_res["zoom"]
 
