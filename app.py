@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1061", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1062", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -75,16 +75,11 @@ if sd.get('pending_update'):
     
     for s in SL: 
         raw_val = str(sel.get(s, "")).strip()
-        if s not in SL_FM and raw_val != "":
-            try:
-                if float(raw_val).is_integer():
-                    raw_val = str(int(float(raw_val)))
-            except: pass
         sd[f"ch_{s}"] = raw_val
     sd.pending_update = None
 
 # -----------------------------------------------------------------------------
-# 3. 핵심 기능 함수
+# 3. 핵심 기능 함수 (팝업창 및 포맷팅 로직)
 # -----------------------------------------------------------------------------
 def grab_all_radio_frequencies_keyless(sido_nm, sgg_nm):
     full_text = f"{sido_nm} {sgg_nm}"
@@ -107,35 +102,21 @@ def grab_all_radio_frequencies_keyless(sido_nm, sgg_nm):
             'KNN 파워FM': '102.5', 'KNN 러브FM': '90.9', 'EBS FM': '104.3', 'CBS 표준FM': '106.9',
             'FEBC 극동방송': '98.1', 'BBS 불교방송': '89.5', 'TBN 교통방송': '95.5'
         },
-        "진주": {
-            'KBS 1R': '90.3', 'KBS 2R': '97.3', 'KBS 클래식FM': '89.3', 'MBC 표준FM': '91.1', 'MBC FM4U': '97.7',
-            'KNN 파워FM': '105.5', 'EBS FM': '101.5', 'FEBC 극동방송': '92.5'
-        },
         "대구": {
             'KBS 1R': '101.3', 'KBS 2R': '102.3', 'KBS 클래식FM': '89.7', 'KBS 해피FM': '558',
             'MBC 표준FM': '96.5', 'MBC FM4U': '95.3', 'SBS 파워FM': '99.3', 'EBS FM': '105.1',
             'CBS 표준FM': '103.1', 'FEBC 극동방송': '91.9', 'BBS 불교방송': '94.5', 'TBN 교통방송': '103.9', '국악방송': '107.5'
-        },
-        "서울": {
-            'KBS 1R': '97.3', 'KBS 2R': '106.1', 'KBS 3R': '1134', 'KBS 클래식FM': '93.1', 'KBS 쿨FM': '89.1', 'KBS 해피FM': '106.1',
-            'MBC 표준FM': '95.9', 'MBC FM4U': '91.9', 'SBS 파워FM': '107.7', 'SBS 러브FM': '103.5',
-            'EBS FM': '104.5', 'CBS 표준FM': '98.1', 'CBS 음악FM': '93.9', 'FEBC 극동방송': '106.7',
-            'BBS 불교방송': '101.9', 'PBC 평화방송': '105.3', 'WBS 원음방송': '89.7', 'TBN 교통방송': '100.5',
-            '국악방송': '99.1', '국방FM': '96.7'
         }
     }
     matched_set = {k: "" for k in SL_FM}
-    found = False
     for key, data in rf_matrix.items():
         if key in full_text:
             matched_set.update(data)
-            found = True
-            break
-    if not found:
-        matched_set.update({
-            'KBS 1R': '91.7', 'KBS 2R': '106.1', 'MBC 표준FM': '95.9', 'MBC FM4U': '100.0',
-            'SBS 파워FM': '100.0', 'EBS FM': '104.5', 'TBN 교통방송': '95.5'
-        })
+            return matched_set
+    matched_set.update({
+        'KBS 1R': '91.7', 'KBS 2R': '106.1', 'MBC 표준FM': '95.9', 'MBC FM4U': '100.0',
+        'SBS 파워FM': '100.0', 'EBS FM': '104.5', 'TBN 교통방송': '95.5'
+    })
     return matched_set
 
 def safe_float(val, default=0.0):
@@ -164,16 +145,67 @@ def parse_coord_input(q):
     except: pass
     return None, None
 
+# 🔥 핵심 업데이트: 팝업창 아코디언 UI 및 소수점 정밀 포맷팅 🔥
 def generate_popup_html(r):
-    dtv_h = "".join(["<div style='display:flex; justify-content:space-between;'><span><b>" + str(s) + "</b></span><span>" + str(r.get(s, '')) + "</span></div>" for s in SL_DTV if r.get(s, '')])
-    uhd_h = "".join(["<div style='display:flex; justify-content:space-between; color:#007bff;'><span><b>" + str(s) + "</b></span><span>" + str(r.get(s, '')) + "</span></div>" for s in SL_UHD if r.get(s, '')])
-    cov_h = f"<br><span style='color:#e67700;'><b>⭕ 등록된 커버리지:</b> {r.get('커버리지', '')} km</span>" if r.get('커버리지', '') and safe_float(r.get('커버리지')) > 0 else ""
-    return f"""<div style='width:350px; font-family:sans-serif; font-size:14px;'>
+    def fmt(v, is_fm):
+        vs = str(v).strip()
+        if not vs or vs == 'nan': return ""
+        if is_fm:
+            # FM은 무조건 소수점 첫째 자리
+            try: return f"{float(vs):.1f}"
+            except: return vs
+        else:
+            # DTV, UHD, DMB는 소수점 제거 정수형
+            try: return str(int(float(vs)))
+            except: return vs
+
+    # DTV / UHD 리스트 조립
+    dtv_h = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>{fmt(r.get(s, ''), False)}</span></div>" for s in SL_DTV if fmt(r.get(s, ''), False)])
+    uhd_h = "".join([f"<div style='display:flex; justify-content:space-between; color:#007bff; margin-bottom:3px;'><span><b>{s}</b></span><span>{fmt(r.get(s, ''), False)}</span></div>" for s in SL_UHD if fmt(r.get(s, ''), False)])
+    
+    # DMB 리스트 조립
+    dmb_h = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; border-bottom:1px solid #eee; padding-bottom:2px;'><span><b>{s}</b></span><span style='color:#087f5b;'>{fmt(r.get(s, ''), False)}</span></div>" for s in SL_DMB if fmt(r.get(s, ''), False)])
+    
+    # FM 리스트 조립 (2열 배치)
+    fm_items = [f"<div style='display:flex; justify-content:space-between; width:48%; margin-bottom:3px;'><span><b style='font-size:12px;'>{s}</b></span><span style='color:#d6336c; font-weight:bold;'>{fmt(r.get(s, ''), True)}</span></div>" for s in SL_FM if fmt(r.get(s, ''), True)]
+    fm_h = "<div style='display:flex; flex-wrap:wrap; justify-content:space-between;'>" + "".join(fm_items) + "</div>"
+
+    cov_h = f"<br><span style='color:#e67700;'><b>⭕ 커버리지:</b> {fmt(r.get('커버리지', ''), False)} km</span>" if fmt(r.get('커버리지', ''), False) else ""
+
+    # HTML 뼈대 구성
+    html = f"""<div style='width:360px; font-family:sans-serif; font-size:14px; max-height:450px; overflow-y:auto; overflow-x:hidden;'>
         <div style='font-size:16px; font-weight:bold;'>[{r.get('구분','')}] {r.get('이름','')}</div>
         <div style='color:#555;'>{r.get('주소','')}{cov_h}</div>
         <hr style='margin: 8px 0;'>
-        <div style='display:flex; justify-content:space-between;'><div style='width:48%;'><b>📡 DTV</b>{dtv_h}</div><div style='width:48%; border-left:1px solid #ddd; padding-left:10px;'><b>✨ UHD</b>{uhd_h}</div></div>
-    </div>"""
+    """
+    
+    # 선택형 아코디언 메뉴 구성
+    if dtv_h or uhd_h:
+        html += f"""
+        <details open style="margin-bottom: 5px;">
+            <summary style="cursor: pointer; background: #f1f3f5; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #dee2e6;">📺 DTV & UHD 채널</summary>
+            <div style='display:flex; justify-content:space-between; padding:8px 5px;'>
+                <div style='width:48%;'>{dtv_h}</div>
+                <div style='width:48%; border-left:1px solid #ddd; padding-left:10px;'>{uhd_h}</div>
+            </div>
+        </details>"""
+        
+    if dmb_h:
+        html += f"""
+        <details style="margin-bottom: 5px;">
+            <summary style="cursor: pointer; background: #ebfbee; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #b2f2bb;">📱 DMB 대역</summary>
+            <div style='padding:8px 5px;'>{dmb_h}</div>
+        </details>"""
+        
+    if fm_h and fm_items:
+        html += f"""
+        <details style="margin-bottom: 5px;">
+            <summary style="cursor: pointer; background: #fff0f6; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #ffdeeb;">📻 FM 라디오 주파수</summary>
+            <div style='padding:8px 5px;'>{fm_h}</div>
+        </details>"""
+        
+    html += "</div>"
+    return html
 
 def load_db():
     if sd.gs_sync_on:
@@ -282,7 +314,7 @@ with st.sidebar:
             for s in SL: sd[f"ch_{s}"] = ""
             st.rerun()
 
-        # 🔥 [복구 완료] 특정 송신소 체크 및 좌표 복사 패널 🔥
+        # 위치 복사 패널 유지
         if sd.in_t_la != 0.0 and sd.in_t_lo != 0.0:
             st.markdown("<div style='padding:5px 0;'>", unsafe_allow_html=True)
             st.markdown(f"**📋 위치 정보 원클릭 복사** ({sd.target_nm if sd.target_nm else '신규 위치'})")
@@ -441,10 +473,17 @@ if map_res and map_res.get("center"):
 st.subheader("📊 전국 방송 시설 데이터 현황")
 if not res_df.empty:
     display_df = res_df.copy()
-    cols_to_clean = ['커버리지'] + SL_DTV + SL_UHD + SL_DMB
-    for c in cols_to_clean:
+    
+    # 표 데이터 포맷팅 (DTV/DMB = 정수, FM = 소수점 1자리)
+    cols_to_clean_int = ['커버리지'] + SL_DTV + SL_UHD + SL_DMB
+    for c in cols_to_clean_int:
         if c in display_df.columns:
-            display_df[c] = display_df[c].apply(lambda x: str(int(float(x))) if str(x).replace('.', '', 1).isdigit() and float(x).is_integer() else x)
+            display_df[c] = display_df[c].apply(lambda x: str(int(float(x))) if str(x).replace('.', '', 1).isdigit() else x)
+            
+    cols_to_clean_float = SL_FM
+    for c in cols_to_clean_float:
+        if c in display_df.columns:
+            display_df[c] = display_df[c].apply(lambda x: f"{float(x):.1f}" if str(x).replace('.', '', 1).isdigit() else x)
 
     event = st.dataframe(
         display_df.style.apply(lambda row: [f"background-color: {'#fff0f0' if row['구분']=='송신소' else '#f0f7ff'}; color: {'#cc0000' if row['구분']=='송신소' else '#0066cc'};" for _ in row], axis=1), 
