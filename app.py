@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1068", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1069", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -54,7 +54,7 @@ if 'init' not in sd:
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
         'show_crosshair': True, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
-        'prev_sel_name': None, 'pending_update': None,
+        'pending_update': None,
         'api_sido': "", 'api_sgg': ""
     })
     sd['init'] = True
@@ -279,8 +279,8 @@ with st.sidebar:
     with tab1:
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
         if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
+            # 🔥 지도 위치 강제 회귀를 막기 위한 핵심 방어 코드 🔥
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
-            # 🔥 핵심 버그 수정: 추출한 시점의 위치로 지도의 중심점 메모리를 강제 잠금(Lock)하여 회귀 현상 방지!
             sd.base_center = [sd.in_t_la, sd.in_t_lo] 
             try:
                 loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
@@ -294,7 +294,6 @@ with st.sidebar:
         if st.button("🔄 2. 입력창 초기화", use_container_width=True): 
             sd.m_mode = "신규 등록"
             sd.target_nm = None
-            sd.prev_sel_name = None 
             sd.in_v_nm = ""
             sd.in_reg_direct = ""
             sd.in_v_pwr = ""
@@ -326,7 +325,6 @@ with st.sidebar:
                 sd.df = sd.df[sd.df['이름'] != sd.target_nm]
                 save_db(sd.df)
                 sd.target_nm = None
-                sd.prev_sel_name = None
                 st.rerun()
 
         st.text_input("지역 (장부 분류용)", key="in_reg_direct")
@@ -385,7 +383,6 @@ with st.sidebar:
                     sd.df = pd.concat([sd.df, pd.DataFrame([v], columns=CL)], ignore_index=True)
                 save_db(sd.df)
                 sd.target_nm = sd.in_v_nm
-                sd.prev_sel_name = sd.in_v_nm
                 sd.temp_active = False
                 st.success("데이터가 구글 클라우드 시트에 성공적으로 동기화되었습니다!")
                 st.rerun()
@@ -480,14 +477,15 @@ if not res_df.empty:
         use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table"
     )
 
+    # 🔥 표 오작동을 막는 핵심 방어 로직 🔥
     if event and event.selection and event.selection.rows:
         idx = event.selection.rows[0]
         if idx < len(res_df):
             sel_name = res_df.iloc[idx]['이름']
-            if sd.get('prev_sel_name') != sel_name:
-                sd['prev_sel_name'] = sel_name 
+            # 사용자가 현재 편집 중인 시설과 "다른 시설"을 클릭했을 때만 지도를 이동시킵니다!
+            if sd.get('target_nm') != sel_name:
+                sd.target_nm = sel_name 
                 sel = res_df.iloc[idx]
-                sd.target_nm = sel_name
                 sd.temp_active = False
                 sd.show_los_chart = False 
                 sd.in_t_la = safe_float(sel.get('위도', 0.0))
@@ -497,8 +495,6 @@ if not res_df.empty:
                 sd.map_key += 1
                 sd.pending_update = sel.to_dict()
                 st.rerun()
-    else:
-        if sd.get('prev_sel_name') is not None: sd.prev_sel_name = None
 
     c1, c2 = st.columns(2)
     with c1: st.download_button("📥 전체 컬럼 엑셀 백업용 CSV 다운로드", data=res_df.to_csv(index=False, encoding='utf-8-sig'), file_name="stations_expanded.csv", use_container_width=True)
