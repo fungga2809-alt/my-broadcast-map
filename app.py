@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1062", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1063", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,7 +22,7 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 채널 및 DB 구조 확장 설정
+# 채널 및 DB 구조 (커버리지 -> 출력(W) 로 변경)
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -38,7 +38,7 @@ SL_FM = [
     '국악방송', '국방FM'
 ]
 SL = SL_DTV + SL_UHD + SL_DMB + SL_FM
-CL = ['지역', '구분', '이름', '커버리지'] + SL + ['위도', '경도', '주소']
+CL = ['지역', '구분', '이름', '출력(W)'] + SL + ['위도', '경도', '주소']
 DB = 'stations.csv'
 sd = st.session_state
 
@@ -50,10 +50,10 @@ if 'init' not in sd:
         'gs_sync_on': True, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
         'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 
         'base_zoom': 14, 'map_key': 10000, 'm_mode': "신규 등록", 'target_nm': None,
-        'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "송신소", 'in_v_cov': 0.0,
+        'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "송신소", 'in_v_pwr': "",
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
-        'show_global_coverage': False, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
+        'show_crosshair': True, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
         'prev_sel_name': None, 'pending_update': None,
         'api_sido': "", 'api_sgg': ""
     })
@@ -69,8 +69,7 @@ if sd.get('pending_update'):
     sd.in_v_nm = sel.get('이름', "")
     sd.in_reg_direct = sel.get('지역', "")
     sd.in_v_cat = sel.get('구분', "송신소")
-    try: sd.in_v_cov = float(sel.get('커버리지', 0.0)) if str(sel.get('커버리지', '')).strip() != "" else 0.0
-    except: sd.in_v_cov = 0.0
+    sd.in_v_pwr = str(sel.get('출력(W)', ""))
     sd.in_v_addr = str(sel.get('주소', ""))
     
     for s in SL: 
@@ -79,7 +78,7 @@ if sd.get('pending_update'):
     sd.pending_update = None
 
 # -----------------------------------------------------------------------------
-# 3. 핵심 기능 함수 (팝업창 및 포맷팅 로직)
+# 3. 핵심 기능 함수
 # -----------------------------------------------------------------------------
 def grab_all_radio_frequencies_keyless(sido_nm, sgg_nm):
     full_text = f"{sido_nm} {sgg_nm}"
@@ -145,81 +144,63 @@ def parse_coord_input(q):
     except: pass
     return None, None
 
-# 🔥 핵심 업데이트: 팝업창 아코디언 UI 및 소수점 정밀 포맷팅 🔥
 def generate_popup_html(r):
     def fmt(v, is_fm):
         vs = str(v).strip()
         if not vs or vs == 'nan': return ""
         if is_fm:
-            # FM은 무조건 소수점 첫째 자리
             try: return f"{float(vs):.1f}"
             except: return vs
         else:
-            # DTV, UHD, DMB는 소수점 제거 정수형
             try: return str(int(float(vs)))
             except: return vs
 
-    # DTV / UHD 리스트 조립
     dtv_h = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px;'><span><b>{s}</b></span><span>{fmt(r.get(s, ''), False)}</span></div>" for s in SL_DTV if fmt(r.get(s, ''), False)])
     uhd_h = "".join([f"<div style='display:flex; justify-content:space-between; color:#007bff; margin-bottom:3px;'><span><b>{s}</b></span><span>{fmt(r.get(s, ''), False)}</span></div>" for s in SL_UHD if fmt(r.get(s, ''), False)])
-    
-    # DMB 리스트 조립
     dmb_h = "".join([f"<div style='display:flex; justify-content:space-between; margin-bottom:3px; border-bottom:1px solid #eee; padding-bottom:2px;'><span><b>{s}</b></span><span style='color:#087f5b;'>{fmt(r.get(s, ''), False)}</span></div>" for s in SL_DMB if fmt(r.get(s, ''), False)])
-    
-    # FM 리스트 조립 (2열 배치)
     fm_items = [f"<div style='display:flex; justify-content:space-between; width:48%; margin-bottom:3px;'><span><b style='font-size:12px;'>{s}</b></span><span style='color:#d6336c; font-weight:bold;'>{fmt(r.get(s, ''), True)}</span></div>" for s in SL_FM if fmt(r.get(s, ''), True)]
     fm_h = "<div style='display:flex; flex-wrap:wrap; justify-content:space-between;'>" + "".join(fm_items) + "</div>"
 
-    cov_h = f"<br><span style='color:#e67700;'><b>⭕ 커버리지:</b> {fmt(r.get('커버리지', ''), False)} km</span>" if fmt(r.get('커버리지', ''), False) else ""
+    # 커버리지 대신 출력(W) 표시
+    pwr_h = f"<br><span style='color:#e67700;'><b>⚡ 출력:</b> {r.get('출력(W)', '')}</span>" if str(r.get('출력(W)', '')).strip() else ""
 
-    # HTML 뼈대 구성
     html = f"""<div style='width:360px; font-family:sans-serif; font-size:14px; max-height:450px; overflow-y:auto; overflow-x:hidden;'>
         <div style='font-size:16px; font-weight:bold;'>[{r.get('구분','')}] {r.get('이름','')}</div>
-        <div style='color:#555;'>{r.get('주소','')}{cov_h}</div>
+        <div style='color:#555;'>{r.get('주소','')}{pwr_h}</div>
         <hr style='margin: 8px 0;'>
     """
-    
-    # 선택형 아코디언 메뉴 구성
     if dtv_h or uhd_h:
-        html += f"""
-        <details open style="margin-bottom: 5px;">
-            <summary style="cursor: pointer; background: #f1f3f5; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #dee2e6;">📺 DTV & UHD 채널</summary>
-            <div style='display:flex; justify-content:space-between; padding:8px 5px;'>
-                <div style='width:48%;'>{dtv_h}</div>
-                <div style='width:48%; border-left:1px solid #ddd; padding-left:10px;'>{uhd_h}</div>
-            </div>
-        </details>"""
-        
+        html += f"""<details open style="margin-bottom: 5px;"><summary style="cursor: pointer; background: #f1f3f5; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #dee2e6;">📺 DTV & UHD 채널</summary>
+            <div style='display:flex; justify-content:space-between; padding:8px 5px;'><div style='width:48%;'>{dtv_h}</div><div style='width:48%; border-left:1px solid #ddd; padding-left:10px;'>{uhd_h}</div></div></details>"""
     if dmb_h:
-        html += f"""
-        <details style="margin-bottom: 5px;">
-            <summary style="cursor: pointer; background: #ebfbee; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #b2f2bb;">📱 DMB 대역</summary>
-            <div style='padding:8px 5px;'>{dmb_h}</div>
-        </details>"""
-        
+        html += f"""<details style="margin-bottom: 5px;"><summary style="cursor: pointer; background: #ebfbee; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #b2f2bb;">📱 DMB 대역</summary>
+            <div style='padding:8px 5px;'>{dmb_h}</div></details>"""
     if fm_h and fm_items:
-        html += f"""
-        <details style="margin-bottom: 5px;">
-            <summary style="cursor: pointer; background: #fff0f6; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #ffdeeb;">📻 FM 라디오 주파수</summary>
-            <div style='padding:8px 5px;'>{fm_h}</div>
-        </details>"""
-        
+        html += f"""<details style="margin-bottom: 5px;"><summary style="cursor: pointer; background: #fff0f6; padding: 6px; font-weight: bold; border-radius: 4px; border: 1px solid #ffdeeb;">📻 FM 라디오 주파수</summary>
+            <div style='padding:8px 5px;'>{fm_h}</div></details>"""
     html += "</div>"
     return html
 
 def load_db():
+    def migrate_columns(df):
+        if '커버리지' in df.columns and '출력(W)' not in df.columns:
+            df.rename(columns={'커버리지': '출력(W)'}, inplace=True)
+        return df
+
     if sd.gs_sync_on:
         try:
             st.cache_data.clear() 
             conn = st.connection("gsheets", type=GSheetsConnection)
             df = conn.read(ttl=0).astype(str).fillna("")
             df.columns = [col.strip() for col in df.columns]
+            df = migrate_columns(df)
             for c in CL:
                 if c not in df.columns: df[c] = ""
             return df[CL]
         except: pass
     try: 
         df = pd.read_csv(DB, dtype=str, encoding='utf-8-sig').fillna("")
+        df = migrate_columns(df)
         for c in CL: 
             if c not in df.columns: df[c] = "" 
         return df[CL]
@@ -254,9 +235,10 @@ if 'df' not in sd:
 with st.sidebar:
     st.header("⚙️ 관제 대시보드")
     sd.gs_sync_on = st.toggle("🌐 클라우드 연동", value=sd.gs_sync_on)
+    # 🔥 추가된 조준경 스위치 🔥
+    sd.show_crosshair = st.toggle("🎯 화면 중앙 조준경 켜기", value=sd.show_crosshair)
     sd.map_layer = st.radio("지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
-    sd.show_global_coverage = st.toggle("⭕ 등록된 커버리지 지도 표시", value=sd.show_global_coverage)
-
+    
     st.divider()
     regs = sorted(sd.df['지역'].unique().tolist()) if not sd.df.empty else []
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
@@ -308,13 +290,12 @@ with st.sidebar:
             sd.prev_sel_name = None 
             sd.in_v_nm = ""
             sd.in_reg_direct = ""
-            sd.in_v_cov = 0.0
+            sd.in_v_pwr = ""
             sd.temp_active = False
             sd.show_los_chart = False
             for s in SL: sd[f"ch_{s}"] = ""
             st.rerun()
 
-        # 위치 복사 패널 유지
         if sd.in_t_la != 0.0 and sd.in_t_lo != 0.0:
             st.markdown("<div style='padding:5px 0;'>", unsafe_allow_html=True)
             st.markdown(f"**📋 위치 정보 원클릭 복사** ({sd.target_nm if sd.target_nm else '신규 위치'})")
@@ -360,9 +341,10 @@ with st.sidebar:
                 else: st.error("최소 시/도 정보를 입력해 주십시오.")
 
         st.text_input("시설명", key="in_v_nm")
-        c_cat, c_cov = st.columns(2)
+        c_cat, c_pwr = st.columns(2)
         with c_cat: st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
-        with c_cov: st.number_input("커버리지(km)", key="in_v_cov", step=1.0)
+        # 🔥 영문/숫자 자유 입력 가능한 출력(W) 필드 🔥
+        with c_pwr: st.text_input("출력 (예: 2.5KW, 20W)", key="in_v_pwr")
         st.text_area("주소 입력 (수동 편집 가능)", key="in_v_addr", height=70)
 
         with st.expander("📺 DTV & UHD 채널 입력"):
@@ -389,7 +371,7 @@ with st.sidebar:
         st.markdown('<span class="btn-green"></span>', unsafe_allow_html=True)
         if st.button("✅ 3. 데이터 통합 저장 (구글시트 실시간 연동)", use_container_width=True):
             if sd.in_v_nm and sd.in_reg_direct:
-                v = [sd.in_reg_direct, sd.in_v_cat, sd.in_v_nm, str(sd.in_v_cov)] + [sd[f"ch_{s}"] for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
+                v = [sd.in_reg_direct, sd.in_v_cat, sd.in_v_nm, sd.in_v_pwr] + [sd[f"ch_{s}"] for s in SL] + [str(sd.in_t_la), str(sd.in_t_lo), sd.in_v_addr]
                 if sd.m_mode == "정보 수정" and sd.target_nm: 
                     sd.df.loc[sd.df['이름'] == sd.target_nm, CL] = v
                 else: 
@@ -447,14 +429,14 @@ crosshair_html = """
     <div style="position: absolute; top: -10px; left: 50%; width: 2px; height: 60px; background: red;"></div>
 </div>
 """
-m.get_root().html.add_child(folium.Element(crosshair_html))
+# 🔥 스위치가 켜져 있을 때만 조준경을 지도 위에 그립니다 🔥
+if sd.show_crosshair:
+    m.get_root().html.add_child(folium.Element(crosshair_html))
 
 for _, r in res_df.iterrows():
     lat, lon = safe_float(r['위도']), safe_float(r['경도'])
     if lat == 0.0: continue
-    cov = safe_float(r.get('커버리지', 0))
-    if sd.show_global_coverage and cov > 0:
-        folium.Circle(location=[lat, lon], radius=cov * 1000, color='#1864ab', fill=True, fill_color='#74c0fc', fill_opacity=0.2).add_to(m)
+    
     if sd.show_los_chart and sd.show_los_line and sd.target_nm == r['이름']:
         if geodesic((lat, lon), sd.crosshair_center).km > 0.1:
             folium.PolyLine(locations=[[lat, lon], sd.crosshair_center], color='red', weight=2.5, dash_array='5, 5').add_to(m)
@@ -475,7 +457,7 @@ if not res_df.empty:
     display_df = res_df.copy()
     
     # 표 데이터 포맷팅 (DTV/DMB = 정수, FM = 소수점 1자리)
-    cols_to_clean_int = ['커버리지'] + SL_DTV + SL_UHD + SL_DMB
+    cols_to_clean_int = SL_DTV + SL_UHD + SL_DMB
     for c in cols_to_clean_int:
         if c in display_df.columns:
             display_df[c] = display_df[c].apply(lambda x: str(int(float(x))) if str(x).replace('.', '', 1).isdigit() else x)
