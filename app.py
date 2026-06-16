@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1067", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1068", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -43,7 +43,7 @@ DB = 'stations.csv'
 sd = st.session_state
 
 # -----------------------------------------------------------------------------
-# 2. 세션 상태 안전 초기화 (조준경 복구)
+# 2. 세션 상태 안전 초기화
 # -----------------------------------------------------------------------------
 if 'init' not in sd:
     sd.update({
@@ -235,7 +235,6 @@ with st.sidebar:
     st.header("⚙️ 관제 대시보드")
     sd.gs_sync_on = st.toggle("🌐 클라우드 연동", value=sd.gs_sync_on)
     
-    # 🔥 조준경 토글 부활 🔥
     new_crosshair_state = st.toggle("🎯 화면 중앙 조준경 켜기", value=sd.show_crosshair)
     if new_crosshair_state != sd.show_crosshair:
         sd.show_crosshair = new_crosshair_state
@@ -279,9 +278,10 @@ with st.sidebar:
     # ---------- TAB 1: 시설 등록/수정 ----------
     with tab1:
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
-        # 🔥 조준경 버튼 완벽 복구 🔥
         if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
+            # 🔥 핵심 버그 수정: 추출한 시점의 위치로 지도의 중심점 메모리를 강제 잠금(Lock)하여 회귀 현상 방지!
+            sd.base_center = [sd.in_t_la, sd.in_t_lo] 
             try:
                 loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
                 if loc: sd.in_v_addr = loc.address
@@ -432,7 +432,6 @@ else:
 
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
 
-# 🔥 조준경(십자선) HTML 오버레이 부활 🔥
 crosshair_html = """
 <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid red; border-radius: 50%; pointer-events: none; z-index: 1000;">
     <div style="position: absolute; top: 50%; left: -10px; width: 60px; height: 2px; background: red;"></div>
@@ -454,11 +453,9 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-# 🔥 깜빡임(리부팅)을 막는 핵심 방어막: base_center를 강제로 덮어씌우지 않고 좌표만 읽어옵니다 🔥
 map_res = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center"])
 
 if map_res and map_res.get("center"):
-    # 지도를 드래그해도 화면을 리부팅시키지 않고 조용히 조준경 좌표만 백업합니다.
     sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
 
 # -----------------------------------------------------------------------------
