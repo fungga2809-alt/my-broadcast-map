@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1063", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1064", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,7 +22,7 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 채널 및 DB 구조 (커버리지 -> 출력(W) 로 변경)
+# 채널 및 DB 구조
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -161,7 +161,6 @@ def generate_popup_html(r):
     fm_items = [f"<div style='display:flex; justify-content:space-between; width:48%; margin-bottom:3px;'><span><b style='font-size:12px;'>{s}</b></span><span style='color:#d6336c; font-weight:bold;'>{fmt(r.get(s, ''), True)}</span></div>" for s in SL_FM if fmt(r.get(s, ''), True)]
     fm_h = "<div style='display:flex; flex-wrap:wrap; justify-content:space-between;'>" + "".join(fm_items) + "</div>"
 
-    # 커버리지 대신 출력(W) 표시
     pwr_h = f"<br><span style='color:#e67700;'><b>⚡ 출력:</b> {r.get('출력(W)', '')}</span>" if str(r.get('출력(W)', '')).strip() else ""
 
     html = f"""<div style='width:360px; font-family:sans-serif; font-size:14px; max-height:450px; overflow-y:auto; overflow-x:hidden;'>
@@ -235,8 +234,14 @@ if 'df' not in sd:
 with st.sidebar:
     st.header("⚙️ 관제 대시보드")
     sd.gs_sync_on = st.toggle("🌐 클라우드 연동", value=sd.gs_sync_on)
-    # 🔥 추가된 조준경 스위치 🔥
-    sd.show_crosshair = st.toggle("🎯 화면 중앙 조준경 켜기", value=sd.show_crosshair)
+    
+    # 🔥 수정 1: 조준경 상태 변화를 감지하고 즉시 맵을 리렌더링하는 완벽한 토글 로직 🔥
+    new_crosshair_state = st.toggle("🎯 화면 중앙 조준경 켜기", value=sd.show_crosshair)
+    if new_crosshair_state != sd.show_crosshair:
+        sd.show_crosshair = new_crosshair_state
+        sd.map_key += 1  # 맵을 완전히 새로 고쳐서 캐시된 십자선을 날려버림
+        st.rerun()
+
     sd.map_layer = st.radio("지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
     
     st.divider()
@@ -244,10 +249,12 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 내 장부 검색", placeholder="저장된 시설명, 채널 등")
 
+    # 🔥 수정 2: 눈에 띄는 안내 문구 추가 🔥
     st.markdown("**🌍 원하는 위치로 지도 이동**")
+    st.warning("🚨 **오픈 API 지도 특성상 주소 검색이 제한적**입니다. **구글 어스(Google Earth)**나 카카오맵에서 확인한 **'좌표(위도, 경도)'를 복사**해서 입력해 주세요!", icon="📌")
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
-        with c_jmp: jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="좌표 입력 (예: 35.17, 129.07)", label_visibility="collapsed")
+        with c_jmp: jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="예: 35.1796, 129.0756", label_visibility="collapsed")
         with c_btn: jump_submit = st.form_submit_button("이동", use_container_width=True)
         if jump_submit and jump_q:
             lat_lon = parse_coord_input(jump_q)
@@ -256,6 +263,7 @@ with st.sidebar:
                 sd.crosshair_center = list(lat_lon)
                 sd.map_jump_q = jump_q
                 sd.map_key += 1
+                st.rerun()
             else:
                 loc = Nominatim(user_agent="b_master").geocode(jump_q)
                 if loc: 
@@ -263,6 +271,7 @@ with st.sidebar:
                     sd.crosshair_center = [loc.latitude, loc.longitude]
                     sd.map_jump_q = jump_q
                     sd.map_key += 1
+                    st.rerun()
                 else: st.toast("검색 실패! 구글지도에서 좌표를 복사해서 넣어주세요.", icon="❌")
 
     st.divider()
@@ -343,7 +352,6 @@ with st.sidebar:
         st.text_input("시설명", key="in_v_nm")
         c_cat, c_pwr = st.columns(2)
         with c_cat: st.radio("구분", ["송신소", "중계소"], key="in_v_cat", horizontal=True)
-        # 🔥 영문/숫자 자유 입력 가능한 출력(W) 필드 🔥
         with c_pwr: st.text_input("출력 (예: 2.5KW, 20W)", key="in_v_pwr")
         st.text_area("주소 입력 (수동 편집 가능)", key="in_v_addr", height=70)
 
@@ -429,7 +437,6 @@ crosshair_html = """
     <div style="position: absolute; top: -10px; left: 50%; width: 2px; height: 60px; background: red;"></div>
 </div>
 """
-# 🔥 스위치가 켜져 있을 때만 조준경을 지도 위에 그립니다 🔥
 if sd.show_crosshair:
     m.get_root().html.add_child(folium.Element(crosshair_html))
 
@@ -445,9 +452,14 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-map_res = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center"])
-if map_res and map_res.get("center"): 
-    sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
+# 🔥 맵을 새로고침해도 이전에 보고 있던 좌표와 확대 비율을 그대로 유지해주는 백업 코드 추가 🔥
+map_res = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center", "zoom"])
+if map_res:
+    if map_res.get("center"): 
+        sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
+        sd.base_center = sd.crosshair_center  # 화면을 새로고침할 때 엉뚱한 곳으로 튀는 것 방지
+    if map_res.get("zoom"):
+        sd.base_zoom = map_res["zoom"]
 
 # -----------------------------------------------------------------------------
 # 6. 표 데이터 렌더링 및 다운로드
