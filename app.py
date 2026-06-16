@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1065", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1066", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,7 +22,6 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 채널 및 DB 구조
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -43,17 +42,17 @@ DB = 'stations.csv'
 sd = st.session_state
 
 # -----------------------------------------------------------------------------
-# 2. 세션 상태 안전 초기화
+# 2. 세션 상태 안전 초기화 (조준경 관련 변수 삭제 및 클릭 타겟 변수 추가)
 # -----------------------------------------------------------------------------
 if 'init' not in sd:
     sd.update({
         'gs_sync_on': True, 'map_layer': "위성+이름", 'sel_reg': "전체", 'ch_search': "",
-        'base_center': [35.1796, 129.0756], 'crosshair_center': [35.1796, 129.0756], 
+        'base_center': [35.1796, 129.0756], 'last_click': None, 
         'base_zoom': 14, 'map_key': 10000, 'm_mode': "신규 등록", 'target_nm': None,
         'in_v_nm': "", 'in_reg_direct': "", 'in_v_cat': "송신소", 'in_v_pwr': "",
         'in_t_la': 35.1796, 'in_t_lo': 129.0756, 'in_v_addr': "", 
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
-        'show_crosshair': True, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
+        'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
         'prev_sel_name': None, 'pending_update': None,
         'api_sido': "", 'api_sgg': ""
     })
@@ -71,10 +70,7 @@ if sd.get('pending_update'):
     sd.in_v_cat = sel.get('구분', "송신소")
     sd.in_v_pwr = str(sel.get('출력(W)', ""))
     sd.in_v_addr = str(sel.get('주소', ""))
-    
-    for s in SL: 
-        raw_val = str(sel.get(s, "")).strip()
-        sd[f"ch_{s}"] = raw_val
+    for s in SL: sd[f"ch_{s}"] = str(sel.get(s, "")).strip()
     sd.pending_update = None
 
 # -----------------------------------------------------------------------------
@@ -234,13 +230,6 @@ if 'df' not in sd:
 with st.sidebar:
     st.header("⚙️ 관제 대시보드")
     sd.gs_sync_on = st.toggle("🌐 클라우드 연동", value=sd.gs_sync_on)
-    
-    new_crosshair_state = st.toggle("🎯 화면 중앙 조준경 켜기", value=sd.show_crosshair)
-    if new_crosshair_state != sd.show_crosshair:
-        sd.show_crosshair = new_crosshair_state
-        sd.map_key += 1
-        st.rerun()
-
     sd.map_layer = st.radio("지도 레이어", ["일반", "위성", "위성+이름", "특수지형도"], index=["일반", "위성", "위성+이름", "특수지형도"].index(sd.map_layer), horizontal=True)
     
     st.divider()
@@ -248,7 +237,6 @@ with st.sidebar:
     sd.sel_reg = st.selectbox("🗺️ 지역 필터", ["전체"] + regs)
     sd.ch_search = st.text_input("🔎 내 장부 검색", placeholder="저장된 시설명, 채널 등")
 
-    # 🔥 수정된 강력한 경고 문구 (카카오, 네이버, 구글맵 복사 불가 명시) 🔥
     st.markdown("**🌍 원하는 위치로 지도 이동**")
     st.warning("🚨 **일반 지도(네이버, 카카오, 구글맵)는 좌표 복사가 안 됩니다.** **구글 어스(Google Earth)** 프로그램에서 확인한 **'좌표(위도, 경도)'를 복사**해서 아래에 입력해 주세요!", icon="📌")
     with st.form("jump_form", clear_on_submit=False):
@@ -259,7 +247,7 @@ with st.sidebar:
             lat_lon = parse_coord_input(jump_q)
             if lat_lon[0] is not None:
                 sd.base_center = list(lat_lon)
-                sd.crosshair_center = list(lat_lon)
+                sd.last_click = list(lat_lon)
                 sd.map_jump_q = jump_q
                 sd.map_key += 1
                 st.rerun()
@@ -267,7 +255,7 @@ with st.sidebar:
                 loc = Nominatim(user_agent="b_master").geocode(jump_q)
                 if loc: 
                     sd.base_center = [loc.latitude, loc.longitude]
-                    sd.crosshair_center = [loc.latitude, loc.longitude]
+                    sd.last_click = [loc.latitude, loc.longitude]
                     sd.map_jump_q = jump_q
                     sd.map_key += 1
                     st.rerun()
@@ -279,18 +267,19 @@ with st.sidebar:
     # ---------- TAB 1: 시설 등록/수정 ----------
     with tab1:
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
-        if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
-            sd.in_t_la, sd.in_t_lo = sd.crosshair_center
-            sd.base_center = [sd.in_t_la, sd.in_t_lo]
-            try:
-                loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
-                if loc: sd.in_v_addr = loc.address
-            except: pass
-            sd.temp_active = True
-            sd.temp_lat, sd.temp_lon = sd.crosshair_center
-            sd.map_key += 1
-            st.toast("📍 조준경 위치가 성공적으로 추출되었습니다!", icon="✅")
-            st.rerun()
+        # 🔥 클릭 타겟 추출 시스템으로 완전 교체 🔥
+        if st.button("🎯 1. 지도 클릭 위치 추출", use_container_width=True):
+            if sd.last_click:
+                sd.in_t_la, sd.in_t_lo = sd.last_click
+                try:
+                    loc = Nominatim(user_agent="b_master").reverse(f"{sd.in_t_la}, {sd.in_t_lo}")
+                    if loc: sd.in_v_addr = loc.address
+                except: pass
+                sd.temp_active = True
+                st.toast("📍 선택하신 위치가 성공적으로 추출되었습니다!", icon="✅")
+                st.rerun()
+            else:
+                st.error("⚠️ 지도에서 원하시는 지점을 먼저 마우스로 클릭해 주세요!")
             
         if st.button("🔄 2. 입력창 초기화", use_container_width=True): 
             sd.m_mode = "신규 등록"
@@ -304,7 +293,6 @@ with st.sidebar:
             for s in SL: sd[f"ch_{s}"] = ""
             st.rerun()
 
-        # 🔥 에러 픽스: 위젯 렌더링 전 메모리 안전 호출 방식(.get) 적용 🔥
         if sd.in_t_la != 0.0 and sd.in_t_lo != 0.0:
             st.markdown("<div style='padding:5px 0;'>", unsafe_allow_html=True)
             st.markdown(f"**📋 위치 정보 원클릭 복사** ({sd.target_nm if sd.target_nm else '신규 위치'})")
@@ -397,22 +385,26 @@ with st.sidebar:
     with tab2:
         st.markdown("### 🔍 가시권(LOS) 단면도")
         if sd.target_nm:
-            st.markdown(f"**현재 대상:** <span style='color:#1864ab; font-weight:bold;'>{sd.target_nm}</span>", unsafe_allow_html=True)
-            sd.show_los_chart = st.toggle("🚀 가시선 분석 켜기", value=sd.show_los_chart)
-            if sd.show_los_chart:
-                dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.crosshair_center).km
-                bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.crosshair_center[0], sd.crosshair_center[1])
-                c1, c2 = st.columns(2)
-                c1.metric("수신 거리", f"{dist_km:.2f} km")
-                c2.metric("방위각", f"{bear:.1f}°")
-                if dist_km > 0.1:
-                    fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
-                    earth_bulge = (dist_km * dist_km) / 50.96 
-                    st.caption(f"프레넬 반경: **{fresnel_r:.1f}m** | 지구 곡률: **{earth_bulge:.1f}m**")
-                    dist_pts = [dist_km * i / 20 for i in range(21)]
-                    bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
-                    st.area_chart(pd.DataFrame({'가림고(m)': bulge_pts}, index=dist_pts), color="#ced4da", height=150)
-                    sd.show_los_line = st.checkbox("지도에 빨간색 LOS 라인 그리기", value=sd.show_los_line)
+            st.markdown(f"**기준 송신소:** <span style='color:#1864ab; font-weight:bold;'>{sd.target_nm}</span>", unsafe_allow_html=True)
+            if sd.last_click:
+                st.markdown("👉 **지도에 클릭된 타겟(녹색)까지의 가시권 분석**")
+                sd.show_los_chart = st.toggle("🚀 가시선 분석 켜기", value=sd.show_los_chart)
+                if sd.show_los_chart:
+                    dist_km = geodesic((sd.in_t_la, sd.in_t_lo), sd.last_click).km
+                    bear = calculate_bearing(sd.in_t_la, sd.in_t_lo, sd.last_click[0], sd.last_click[1])
+                    c1, c2 = st.columns(2)
+                    c1.metric("수신 거리", f"{dist_km:.2f} km")
+                    c2.metric("방위각", f"{bear:.1f}°")
+                    if dist_km > 0.1:
+                        fresnel_r = 17.32 * math.sqrt(dist_km / (4 * 0.5))
+                        earth_bulge = (dist_km * dist_km) / 50.96 
+                        st.caption(f"프레넬 반경: **{fresnel_r:.1f}m** | 지구 곡률: **{earth_bulge:.1f}m**")
+                        dist_pts = [dist_km * i / 20 for i in range(21)]
+                        bulge_pts = [(d1 * (dist_km - d1)) / 17.0 for d1 in dist_pts]
+                        st.area_chart(pd.DataFrame({'가림고(m)': bulge_pts}, index=dist_pts), color="#ced4da", height=150)
+                        sd.show_los_line = st.checkbox("지도에 빨간색 LOS 라인 그리기", value=sd.show_los_line)
+            else:
+                st.warning("분석할 지점을 지도에서 먼저 마우스로 클릭해 주세요.")
         else: st.info("하단 표에서 기준 송신소를 먼저 클릭하세요.")
         st.divider()
         st.subheader("🧮 물리 채널 ➜ 주파수 변환기")
@@ -432,34 +424,32 @@ else:
     attr = 'Google'
 
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
-crosshair_html = """
-<div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid red; border-radius: 50%; pointer-events: none; z-index: 1000;">
-    <div style="position: absolute; top: 50%; left: -10px; width: 60px; height: 2px; background: red;"></div>
-    <div style="position: absolute; top: -10px; left: 50%; width: 2px; height: 60px; background: red;"></div>
-</div>
-"""
-if sd.show_crosshair:
-    m.get_root().html.add_child(folium.Element(crosshair_html))
+
+# 🔥 십자선 대신 녹색 타겟 마커 렌더링 🔥
+if sd.last_click:
+    folium.Marker(sd.last_click, icon=folium.Icon(color='green', icon='crosshairs', prefix='fa'), tooltip="클릭 타겟").add_to(m)
 
 for _, r in res_df.iterrows():
     lat, lon = safe_float(r['위도']), safe_float(r['경도'])
     if lat == 0.0: continue
     
     if sd.show_los_chart and sd.show_los_line and sd.target_nm == r['이름']:
-        if geodesic((lat, lon), sd.crosshair_center).km > 0.1:
-            folium.PolyLine(locations=[[lat, lon], sd.crosshair_center], color='red', weight=2.5, dash_array='5, 5').add_to(m)
+        if sd.last_click and geodesic((lat, lon), sd.last_click).km > 0.1:
+            folium.PolyLine(locations=[[lat, lon], sd.last_click], color='red', weight=2.5, dash_array='5, 5').add_to(m)
     folium.Marker([lat, lon], icon=folium.Icon(color='red' if r['구분']=='송신소' else 'blue'), popup=folium.Popup(generate_popup_html(r), max_width=400)).add_to(m)
 
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
-map_res = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center", "zoom"])
-if map_res:
-    if map_res.get("center"): 
-        sd.crosshair_center = [map_res["center"]["lat"], map_res["center"]["lng"]]
-        sd.base_center = sd.crosshair_center  
-    if map_res.get("zoom"):
-        sd.base_zoom = map_res["zoom"]
+# 🔥 통신 최소화: 오직 사용자가 마우스를 '클릭'했을 때만 데이터를 넘기도록 차단 설정 🔥
+map_res = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["last_clicked"])
+
+if map_res and map_res.get("last_clicked"):
+    click_lat = map_res["last_clicked"]["lat"]
+    click_lng = map_res["last_clicked"]["lng"]
+    if sd.last_click != [click_lat, click_lng]:
+        sd.last_click = [click_lat, click_lng]
+        st.rerun()
 
 # -----------------------------------------------------------------------------
 # 6. 표 데이터 렌더링 및 다운로드
@@ -468,7 +458,6 @@ st.subheader("📊 전국 방송 시설 데이터 현황")
 if not res_df.empty:
     display_df = res_df.copy()
     
-    # 표 데이터 포맷팅 (DTV/DMB = 정수, FM = 소수점 1자리)
     cols_to_clean_int = SL_DTV + SL_UHD + SL_DMB
     for c in cols_to_clean_int:
         if c in display_df.columns:
@@ -497,7 +486,7 @@ if not res_df.empty:
                 sd.in_t_la = safe_float(sel.get('위도', 0.0))
                 sd.in_t_lo = safe_float(sel.get('경도', 0.0))
                 sd.base_center = [sd.in_t_la, sd.in_t_lo]
-                sd.crosshair_center = [sd.in_t_la, sd.in_t_lo]
+                sd.last_click = [sd.in_t_la, sd.in_t_lo]
                 sd.map_key += 1
                 sd.pending_update = sel.to_dict()
                 st.rerun()
