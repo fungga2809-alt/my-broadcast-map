@@ -90,7 +90,7 @@ def grab_all_radio_frequencies_api(sido_nm, sgg_nm, api_key=""):
     full_text = f"{sido_nm} {sgg_nm}"
     
     # 향후 실제 API Request 로직 삽입부
-    # if api_key:
+    # if api_key:193731ygv76r094i9q55
     #     url = f"https://api.spectrumnuri.kr/..."
     #     response = requests.get(url, params={"key": api_key, "region": sido_nm})
     #     ...
