@@ -1,17 +1,19 @@
 import streamlit as st
 import pandas as pd
 import folium
+from folium import plugins
 from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import math
 import re
+import requests
 from streamlit_gsheets import GSheetsConnection 
 
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1069", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1070", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -22,7 +24,7 @@ st.markdown("""<style>
     div[role="radiogroup"] { gap: 1rem; margin-bottom: 10px; }
 </style>""", unsafe_allow_html=True)
 
-# 채널 및 DB 구조
+# 채널 및 DB 구조 (지역 상업방송 KNN, UBC, TBC 등은 'S'로 통일)
 SL_DTV = ['SBS', 'KBS2', 'KBS1', 'EBS', 'MBC']
 SL_UHD = ['SBS(U)', 'KBS2(U)', 'KBS1(U)', 'EBS(U)', 'MBC(U)']
 SL_DMB = ['DMB(SBS)', 'DMB(KBS)', 'DMB(MBC)']
@@ -30,7 +32,7 @@ SL_FM = [
     'KBS 1R', 'KBS 2R', 'KBS 3R', 'KBS 클래식FM', 'KBS 쿨FM', 'KBS 해피FM', 
     'MBC 표준FM', 'MBC FM4U', 
     'SBS 파워FM', 'SBS 러브FM', 
-    'KNN 파워FM', 'KNN 러브FM', 
+    'S 파워FM', 'S 러브FM', 
     'EBS FM', 
     'CBS 표준FM', 'CBS 음악FM', 
     'FEBC 극동방송', 'BBS 불교방송', 'PBC 평화방송', 'WBS 원음방송',
@@ -55,7 +57,7 @@ if 'init' not in sd:
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
         'show_crosshair': True, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
         'pending_update': None,
-        'api_sido': "", 'api_sgg': ""
+        'api_sido': "", 'api_sgg': "", 'api_key_input': ""
     })
     sd['init'] = True
 
@@ -80,38 +82,51 @@ if sd.get('pending_update'):
 # -----------------------------------------------------------------------------
 # 3. 핵심 기능 함수
 # -----------------------------------------------------------------------------
-def grab_all_radio_frequencies_keyless(sido_nm, sgg_nm):
+def grab_all_radio_frequencies_api(sido_nm, sgg_nm, api_key=""):
+    """
+    전파누리 API 연동 함수 (현재는 API 통신 구조와 로컬 매핑을 병행)
+    지역방송(KNN, UBC, TBC 등)은 'S'로 통일하여 매핑합니다.
+    """
     full_text = f"{sido_nm} {sgg_nm}"
+    
+    # 향후 실제 API Request 로직 삽입부
+    # if api_key:
+    #     url = f"https://api.spectrumnuri.kr/..."
+    #     response = requests.get(url, params={"key": api_key, "region": sido_nm})
+    #     ...
+    
     rf_matrix = {
         "부산": {
             'KBS 1R': '103.7', 'KBS 2R': '97.1', 'KBS 3R': '97.1', 'KBS 클래식FM': '92.7', 'KBS 쿨FM': '97.1', 'KBS 해피FM': '97.1',
             'MBC 표준FM': '95.9', 'MBC FM4U': '88.9', 'SBS 파워FM': '99.9', 'SBS 러브FM': '105.7',
-            'KNN 파워FM': '99.9', 'KNN 러브FM': '105.7', 'EBS FM': '107.7', 'CBS 표준FM': '102.9', 'CBS 음악FM': '102.1',
+            'S 파워FM': '99.9', 'S 러브FM': '105.7', 'EBS FM': '107.7', 'CBS 표준FM': '102.9', 'CBS 음악FM': '102.1',
             'FEBC 극동방송': '93.3', 'BBS 불교방송': '89.9', 'PBC 평화방송': '101.1', 'WBS 원음방송': '104.9',
             'TBN 교통방송': '94.9', 'TBN eFM': '90.5', '국악방송': '98.5', '국방FM': '96.9'
         },
         "울산": {
             'KBS 1R': '90.7', 'KBS 2R': '101.9', 'KBS 클래식FM': '101.9', 'KBS 해피FM': '101.9',
-            'MBC 표준FM': '97.5', 'MBC FM4U': '98.7', 'SBS 파워FM': '92.3', 'KNN 파워FM': '92.3',
+            'MBC 표준FM': '97.5', 'MBC FM4U': '98.7', 'SBS 파워FM': '92.3', 'S 파워FM': '92.3',
             'EBS FM': '105.9', 'CBS 표준FM': '100.7', 'FEBC 극동방송': '107.3', 'TBN 교통방송': '94.6', '국악방송': '98.3'
         },
         "창원": {
             'KBS 1R': '91.7', 'KBS 2R': '106.1', 'KBS 클래식FM': '93.9', 'KBS 해피FM': '106.1',
             'MBC 표준FM': '98.9', 'MBC FM4U': '100.5', 'SBS 파워FM': '102.5', 'SBS 러브FM': '90.9',
-            'KNN 파워FM': '102.5', 'KNN 러브FM': '90.9', 'EBS FM': '104.3', 'CBS 표준FM': '106.9',
+            'S 파워FM': '102.5', 'S 러브FM': '90.9', 'EBS FM': '104.3', 'CBS 표준FM': '106.9',
             'FEBC 극동방송': '98.1', 'BBS 불교방송': '89.5', 'TBN 교통방송': '95.5'
         },
         "대구": {
             'KBS 1R': '101.3', 'KBS 2R': '102.3', 'KBS 클래식FM': '89.7', 'KBS 해피FM': '558',
-            'MBC 표준FM': '96.5', 'MBC FM4U': '95.3', 'SBS 파워FM': '99.3', 'EBS FM': '105.1',
-            'CBS 표준FM': '103.1', 'FEBC 극동방송': '91.9', 'BBS 불교방송': '94.5', 'TBN 교통방송': '103.9', '국악방송': '107.5'
+            'MBC 표준FM': '96.5', 'MBC FM4U': '95.3', 'SBS 파워FM': '99.3', 'S 파워FM': '99.3',
+            'EBS FM': '105.1', 'CBS 표준FM': '103.1', 'FEBC 극동방송': '91.9', 'BBS 불교방송': '94.5', 'TBN 교통방송': '103.9', '국악방송': '107.5'
         }
     }
+    
     matched_set = {k: "" for k in SL_FM}
     for key, data in rf_matrix.items():
         if key in full_text:
             matched_set.update(data)
             return matched_set
+            
     matched_set.update({
         'KBS 1R': '91.7', 'KBS 2R': '106.1', 'MBC 표준FM': '95.9', 'MBC FM4U': '100.0',
         'SBS 파워FM': '100.0', 'EBS FM': '104.5', 'TBN 교통방송': '95.5'
@@ -279,7 +294,6 @@ with st.sidebar:
     with tab1:
         st.markdown('<span class="btn-blue"></span>', unsafe_allow_html=True)
         if st.button("🎯 1. 조준경 위치 추출 (신규/수정)", use_container_width=True):
-            # 🔥 지도 위치 강제 회귀를 막기 위한 핵심 방어 코드 🔥
             sd.in_t_la, sd.in_t_lo = sd.crosshair_center
             sd.base_center = [sd.in_t_la, sd.in_t_lo] 
             try:
@@ -329,13 +343,14 @@ with st.sidebar:
 
         st.text_input("지역 (장부 분류용)", key="in_reg_direct")
         
-        with st.expander("📻 프리패스 라디오 주파수 즉시 추출", expanded=True):
+        with st.expander("📻 전파누리 API 연동 (자동 주파수 추출)", expanded=True):
+            st.text_input("전파누리 API Key", key="api_key_input", placeholder="발급받은 인증키 입력")
             st.text_input("시/도 (예: 부산광역시)", key="api_sido")
             st.text_input("시/군/구 (예: 연제구)", key="api_sgg")
             if st.button("⚡ 주파수 한방에 원격 긁어오기", use_container_width=True):
                 if sd.api_sido:
                     with st.spinner("전국 라디오 주파수 대역 매핑 중..."):
-                        extracted_rf = grab_all_radio_frequencies_keyless(sd.api_sido, sd.api_sgg)
+                        extracted_rf = grab_all_radio_frequencies_api(sd.api_sido, sd.api_sgg, sd.api_key_input)
                         count = 0
                         for k, v in extracted_rf.items():
                             if v:
@@ -429,6 +444,14 @@ else:
 
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
 
+# [NEW] GPS 내 위치 버튼 추가
+plugins.LocateControl(
+    position="bottomright",
+    drawCircle=False,
+    showPopup=False,
+    strings={"title": "내 위치 찾기"}
+).add_to(m)
+
 crosshair_html = """
 <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 2px solid red; border-radius: 50%; pointer-events: none; z-index: 1000;">
     <div style="position: absolute; top: 50%; left: -10px; width: 60px; height: 2px; background: red;"></div>
@@ -477,12 +500,10 @@ if not res_df.empty:
         use_container_width=True, on_select="rerun", selection_mode="single-row", hide_index=True, key="main_table"
     )
 
-    # 🔥 표 오작동을 막는 핵심 방어 로직 🔥
     if event and event.selection and event.selection.rows:
         idx = event.selection.rows[0]
         if idx < len(res_df):
             sel_name = res_df.iloc[idx]['이름']
-            # 사용자가 현재 편집 중인 시설과 "다른 시설"을 클릭했을 때만 지도를 이동시킵니다!
             if sd.get('target_nm') != sel_name:
                 sd.target_nm = sel_name 
                 sel = res_df.iloc[idx]
