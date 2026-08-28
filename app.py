@@ -84,16 +84,12 @@ if sd.get('pending_update'):
 # -----------------------------------------------------------------------------
 def grab_all_radio_frequencies_api(sido_nm, sgg_nm, api_key=""):
     """
-    전파누리 API 연동 함수 (현재는 API 통신 구조와 로컬 매핑을 병행)
-    지역방송(KNN, UBC, TBC 등)은 'S'로 통일하여 매핑합니다.
+    전파누리 API 연동 함수 
+    (API 키를 화면에서 입력받지 않고 코드 내부에 고정하려면 아래 api_key 변수에 입력하세요)
     """
-    full_text = f"{sido_nm} {sgg_nm}"
+    # api_key = "여기에_발급받은_인증키_하드코딩" 
     
-    # 향후 실제 API Request 로직 삽입부
-    # if api_key:
-    #     url = f"https://api.spectrumnuri.kr/..."
-    #     response = requests.get(url, params={"key": api_key, "region": sido_nm})
-    #     ...
+    full_text = f"{sido_nm} {sgg_nm}"
     
     rf_matrix = {
         "부산": {
@@ -344,8 +340,8 @@ with st.sidebar:
         st.text_input("지역 (장부 분류용)", key="in_reg_direct")
         
         with st.expander("📻 전파누리 API 연동 (자동 주파수 추출)", expanded=True):
-            # 🔥 여기에 실제 발급받은 인증키를 입력해 두면 매번 입력하지 않아도 됩니다. 🔥
-            st.text_input("전파누리 API Key", key="api_key_input", value="여기에_발급받은_인증키_입력")
+            # 🔥 API Key 입력창을 공란으로 비워두었습니다 🔥
+            st.text_input("전파누리 API Key", key="api_key_input", value="")
             st.text_input("시/도 (예: 부산광역시)", key="api_sido")
             st.text_input("시/군/구 (예: 연제구)", key="api_sgg")
             if st.button("⚡ 주파수 한방에 원격 긁어오기", use_container_width=True):
@@ -445,13 +441,13 @@ else:
 
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
 
-# 🔥 [NEW] GPS 내 위치 버튼 (setView=True 옵션으로 버튼 클릭 시 지도가 이동하도록 수정) 🔥
+# 🔥 [NEW] GPS 내 위치 버튼 (지도 왼쪽 상단에 잘 보이게 배치) 🔥
 plugins.LocateControl(
-    position="bottomright",
+    position="topleft",
     drawCircle=False,
     showPopup=False,
-    strings={"title": "내 위치 찾기"},
-    locateOptions={"enableHighAccuracy": True, "setView": True}
+    strings={"title": "📍 내 위치로 이동 (GPS)"},
+    locateOptions={"enableHighAccuracy": True, "setView": True, "maxZoom": 16}
 ).add_to(m)
 
 crosshair_html = """
@@ -475,6 +471,7 @@ for _, r in res_df.iterrows():
 if sd.temp_active: 
     folium.Marker([sd.temp_lat, sd.temp_lon], icon=folium.Icon(color='lightgray', icon='info-sign')).add_to(m)
 
+# 지도가 GPS 위치로 이동하면 중앙 조준경(center)도 자동으로 해당 위치를 타겟팅합니다.
 map_res = st_folium(m, use_container_width=True, height=750, key=f"map_{sd.map_key}", returned_objects=["center"])
 
 if map_res and map_res.get("center"):
