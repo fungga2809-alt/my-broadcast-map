@@ -13,7 +13,7 @@ from streamlit_gsheets import GSheetsConnection
 # -----------------------------------------------------------------------------
 # 1. 페이지 설정 및 전역 변수
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="Broadcasting Master v1070", layout="wide")
+st.set_page_config(page_title="Broadcasting Master v1071", layout="wide")
 
 st.markdown("""<style>
     .main .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
@@ -90,7 +90,7 @@ def grab_all_radio_frequencies_api(sido_nm, sgg_nm, api_key=""):
     full_text = f"{sido_nm} {sgg_nm}"
     
     # 향후 실제 API Request 로직 삽입부
-    # if api_key:193731ygv76r094i9q55
+    # if api_key:
     #     url = f"https://api.spectrumnuri.kr/..."
     #     response = requests.get(url, params={"key": api_key, "region": sido_nm})
     #     ...
@@ -344,7 +344,8 @@ with st.sidebar:
         st.text_input("지역 (장부 분류용)", key="in_reg_direct")
         
         with st.expander("📻 전파누리 API 연동 (자동 주파수 추출)", expanded=True):
-            st.text_input("전파누리 API Key", key="api_key_input", placeholder="발급받은 인증키 입력")
+            # 🔥 여기에 실제 발급받은 인증키를 입력해 두면 매번 입력하지 않아도 됩니다. 🔥
+            st.text_input("전파누리 API Key", key="api_key_input", value="여기에_발급받은_인증키_입력")
             st.text_input("시/도 (예: 부산광역시)", key="api_sido")
             st.text_input("시/군/구 (예: 연제구)", key="api_sgg")
             if st.button("⚡ 주파수 한방에 원격 긁어오기", use_container_width=True):
@@ -444,12 +445,13 @@ else:
 
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
 
-# [NEW] GPS 내 위치 버튼 추가
+# 🔥 [NEW] GPS 내 위치 버튼 (setView=True 옵션으로 버튼 클릭 시 지도가 이동하도록 수정) 🔥
 plugins.LocateControl(
     position="bottomright",
     drawCircle=False,
     showPopup=False,
-    strings={"title": "내 위치 찾기"}
+    strings={"title": "내 위치 찾기"},
+    locateOptions={"enableHighAccuracy": True, "setView": True}
 ).add_to(m)
 
 crosshair_html = """
