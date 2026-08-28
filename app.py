@@ -57,7 +57,7 @@ if 'init' not in sd:
         'temp_active': False, 'temp_lat': 0.0, 'temp_lon': 0.0,
         'show_crosshair': True, 'show_los_chart': False, 'show_los_line': True, 'map_jump_q': "",
         'pending_update': None,
-        'api_sido': "", 'api_sgg': "", 'api_key_input': ""
+        'api_sido': "", 'api_sgg': ""
     })
     sd['init'] = True
 
@@ -82,11 +82,11 @@ if sd.get('pending_update'):
 # -----------------------------------------------------------------------------
 # 3. 핵심 기능 함수
 # -----------------------------------------------------------------------------
-def grab_all_radio_frequencies_api(sido_nm, sgg_nm, api_key=""):
+def grab_all_radio_frequencies_api(sido_nm, sgg_nm):
     """
     전파누리 API 연동 함수 
-    (API 키를 화면에서 입력받지 않고 코드 내부에 고정하려면 아래 api_key 변수에 입력하세요)
     """
+    # 실제 연동 시 아래 변수에 발급받은 API 키를 하드코딩하시면 됩니다.
     # api_key = "여기에_발급받은_인증키_하드코딩" 
     
     full_text = f"{sido_nm} {sgg_nm}"
@@ -261,6 +261,11 @@ with st.sidebar:
 
     st.markdown("**🌍 원하는 위치로 지도 이동**")
     st.warning("🚨 **일반 지도(네이버, 카카오, 구글맵)는 좌표 복사가 안 됩니다.** **구글 어스(Google Earth)** 프로그램에서 확인한 **'좌표(위도, 경도)'를 복사**해서 아래에 입력해 주세요!", icon="📌")
+    
+    # 🔥 사용자 요청에 따른 '내 위치' 버튼 추가 및 안내 🔥
+    if st.button("📍 내 위치 (GPS) 이동", use_container_width=True):
+        st.info("💡 **안내:** 브라우저 보안 정책상 좌측 사이드바 버튼만으로는 기기의 GPS를 바로 읽어올 수 없습니다. \n\n**오른쪽 지도 화면의 좌측 상단 모서리에 있는 '📍(GPS 아이콘)'**을 직접 클릭하시면 지도가 내 위치로 이동하며 조준경이 맞춰집니다.")
+
     with st.form("jump_form", clear_on_submit=False):
         c_jmp, c_btn = st.columns([3, 1])
         with c_jmp: jump_q = st.text_input("공간 이동", value=sd.map_jump_q, placeholder="예: 35.1796, 129.0756", label_visibility="collapsed")
@@ -340,14 +345,14 @@ with st.sidebar:
         st.text_input("지역 (장부 분류용)", key="in_reg_direct")
         
         with st.expander("📻 전파누리 API 연동 (자동 주파수 추출)", expanded=True):
-            # 🔥 API Key 입력창을 공란으로 비워두었습니다 🔥
-            st.text_input("전파누리 API Key", key="api_key_input", value="")
+            # 🔥 API Key 입력창 완전 삭제 완료 🔥
             st.text_input("시/도 (예: 부산광역시)", key="api_sido")
             st.text_input("시/군/구 (예: 연제구)", key="api_sgg")
             if st.button("⚡ 주파수 한방에 원격 긁어오기", use_container_width=True):
                 if sd.api_sido:
                     with st.spinner("전국 라디오 주파수 대역 매핑 중..."):
-                        extracted_rf = grab_all_radio_frequencies_api(sd.api_sido, sd.api_sgg, sd.api_key_input)
+                        # 수정된 함수 호출 (UI에서 API키를 넘기지 않음)
+                        extracted_rf = grab_all_radio_frequencies_api(sd.api_sido, sd.api_sgg)
                         count = 0
                         for k, v in extracted_rf.items():
                             if v:
@@ -441,7 +446,8 @@ else:
 
 m = folium.Map(location=sd.base_center, zoom_start=sd.base_zoom, tiles=tile_url, attr=attr)
 
-# 🔥 [NEW] GPS 내 위치 버튼 (지도 왼쪽 상단에 잘 보이게 배치) 🔥
+# 🔥 [NEW] GPS 내 위치 이동 버튼 (지도 좌측 상단 렌더링) 🔥
+# 브라우저에서 이 버튼(📍 아이콘)을 누르면 실제 GPS를 통해 지도가 이동합니다.
 plugins.LocateControl(
     position="topleft",
     drawCircle=False,
